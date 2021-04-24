@@ -1,0 +1,10 @@
+include LICENSE
+include README.rst
+include CHANGES.rst
+graft tests
+graft examples
+graft docs
+prune docs/_build
+prune docs/_themes
+prune tests/output
+global-exclude *.py[co]
