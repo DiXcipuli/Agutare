@@ -409,8 +409,7 @@ class Tuplet:
 class Duration:
     """A duration."""
 
-    #quarterTime = 960
-    quarterTime = 1000
+    quarterTime = 960
 
     whole = 1
     half = 2
