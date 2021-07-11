@@ -16,31 +16,29 @@ from anytree import Node, RenderTree, search #To implement the menu architecture
 
 
 
-
 # PIN DEFINITION --------------------------------------------------------------------------------------
-rotary_pin_A = 7            #
-rotary_pin_B = 8            # ROTARY ENCODER
-rotary_switch = 25          #
+menu_btn_next = 4               #
+menu_btn_previous = 17           # Buttons to browse the menu
+menu_btn_validate =27           #
+menu_btn_return = 22            #
 
-back_button = 18            # Return / Cancel button
-
-btn_servo_1 = 20            #
-btn_servo_2 = 21            #
-btn_servo_3 = 22            # Buttons to trigger the servos
-btn_servo_4 = 23            #
-btn_servo_5 = 24            #
-btn_servo_6 = 26            #
+btn_servo_1 = 13            #
+btn_servo_2 = 19            #
+btn_servo_3 = 26            # Buttons to trigger the servos
+btn_servo_4 = 16            #
+btn_servo_5 = 20            #
+btn_servo_6 = 21            #
 btn_servo_list = [btn_servo_1, btn_servo_2, btn_servo_3, btn_servo_4, btn_servo_5, btn_servo_6]
 
-buzzer_pin = 12             # I am using the PMW of the Raspberrw, on the GPIO12, PMW channel 0
+buzzer_pin = 12             # I am using the PMW of the Raspberry, on the GPIO12, PMW channel 0
 # -----------------------------------------------------------------------------------------------------
-
+ 
 
 
 
 # BUZZER-METRONOME ------------------------------------------------------------------------------------
 buzzer_freq = 440
-buzzer_duration = 0.07 # In second, how long does the buzzer last for the metronome
+buzzer_duration = 0.07      # In second, how long does the buzzer last for the metronome
 # -----------------------------------------------------------------------------------------------------
 
 
@@ -49,10 +47,10 @@ buzzer_duration = 0.07 # In second, how long does the buzzer last for the metron
 # GPIO SETUP ------------------------------------------------------------------------------------------
 GPIO.setmode(GPIO.BCM)
 
-GPIO.setup(rotary_pin_A, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(rotary_pin_B, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(rotary_switch, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(back_button, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(menu_btn_next, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(menu_btn_previous, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(menu_btn_validate, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(menu_btn_return, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 GPIO.setup(btn_servo_1, GPIO.IN, pull_up_down=GPIO.PUD_UP)      #
 GPIO.setup(btn_servo_2, GPIO.IN, pull_up_down=GPIO.PUD_UP)      #
@@ -71,83 +69,104 @@ buzzer_pwm = GPIO.PWM(buzzer_pin, buzzer_freq)                  #
 # TAB, metronome and Display information --------------------------------------------------------------------------------------
 tab_path = '/home/pi/Documents/RobotizeGuitar/Tabs/'                # For tabs which wont be edited
 custom_tab_path = '/home/pi/Documents/RobotizeGuitar/CustomTabs/'   # For own compositions, where measures and notes will be added
-current_tab = None          # Stores the current tab we are working on (pyguitarpro.Song object)
-current_tab_name = None     # Stores the current tab name we are working on (string)
+current_tab = None                  # Stores the current tab we are working on (pyguitarpro.Song object)
+current_tab_name = None             # Stores the current tab name we are working on (string)
 
 default_tempo = 120
 new_tab_tempo = default_tempo
 current_tempo = default_tempo
-default_tab_name = "tab_"
-extension_type = ".gp5"     # Could be also .gp3 .gp4 or .tg (for TuxGuitar)
+saved_tempo = default_tempo
+tempo_interval = 5                  # When changing the tempo value, will go 5 by 5 instead of 1 by 1
+default_tab_name = "tab_"           # It wont be able to set the desired tab name when creating one. 
+extension_type = ".gp5"             # Could be also .gp3 .gp4 or .tg (for TuxGuitar)
  
+events = []                         # Will store all the timer, one per note.
 
-events = [] # Will store all the timer, one per note.
-
-metronome_on = False 
+is_metronome_on = False 
 is_string_test_running = False
 is_tab_running = False
 run_tab_at_startup = True
+is_free_mode_on = False
 
 # Instanciate LCD object
-lcd_display = I2C_LCD_driver.lcd()      
+lcd_display = I2C_LCD_driver.lcd()    
 #--------------------------------------------------------------------------------------------------------
 
 
 
 
 # MENU ---------------------------------------------------------------------------------------------------
+# ALL MESSAGES FROM THE MENU /////////////////////////////////////////////////////////////////
 welcome_msg = 'Guitar Ready!'
-
-# The menu architecture is handled by a tree
-current_node = None
 main_menu = ['Play Tab', 'Practice', 'Test Strings', 'Set Motors Pos']
-song_list = [] # Will be populate with the tabs in 'tab_path' folder
 practice_menu = ['Free Mode', 'Record Mode']
 string_test_list = ['String 1','String 2','String 3', 'String 4','String 5','String 6',]
 motor_pos_menu = ['Set Motors LOW', 'Set Motors MID', 'Set Motors HIGH']
 record_menu = ['New Tab', 'Existing Tab']
-new_tab_menu = "Choose tempo"
-existing_tab = [] # Will be populate with the tabs in 'custom_tab_path' folder
-menu_sleeping_time = 0.5 # The time needed to display some useful information
+new_tab_menu = "New Tab Tempo"
+free_mode_menu = "Free Mode Tempo"
+record_session = "Record Session"
+track_armed = "Track armed!"
+track_not_armed = "Track not armed"
+tempo_on = "Tempo on"
+tempo_off = "Tempo off"
 
-for file in os.listdir(tab_path):   # Populating the list with all the files in the 'tab_path' folder
-    song_list.append(str(file))
+# Those two list will be filed with the files contained in the respective fiolders
+custom_tab_list = []
+tab_list = []
 
-# Combining the sub menu
-sub_menu_list = [song_list, practice_menu, string_test_list, motor_pos_menu]
+for file_name in os.listdir(tab_path):          # Populating the list with all the files in the 'tab_path' folder
+    tab_list.append(str(file_name))
+for file_name in os.listdir(custom_tab_path):   # Populating the list with all the files in the 'custom_tab_path' folder
+    custom_tab_list.append(str(file_name))
 
-# Creqting the first top node of the tree
-top_menu_node = Node("top_menu_node")
-#Populate tree, with the main menu list
-for option in main_menu:
-    Node(option, parent = top_menu_node)
+# CREATING THE TREE ///////////////////////////////////////////////////////////////////////////////////
+current_node = None
+top_menu_node = Node("top_menu_node")                       # Creating the top node
+custom_tab_list_node = None
+record_mode_node = None
 
+for index, option_1 in enumerate(main_menu):                #Filling the whole tree
+    node_1 = Node(option_1, parent = top_menu_node)    
+    if index == 0:      # Play Tab
+        for option_2 in tab_list:
+            node_2 = Node(option_2, parent = node_1)
+    elif index == 1:    # Practice
+        for i, option_2 in enumerate(practice_menu):
+            node_2 = Node(option_2, parent = node_1)
+            # if i == 0:      # Free Mode
+            #     node_3 = Node(free_mode_menu, parent = node_2)
+            if i == 1:    # Record
+                record_mode_node = node_2
+                for idx, option_3 in enumerate(record_menu):
+                    node_3 = Node(option_3, parent = node_2)
+                    if idx == 0: # New Tab
+                        node_4 = Node(new_tab_menu, parent = node_3)
+                        node_5 = Node(record_session, parent = node_4)
+                    elif idx == 1: # Existing Tab
+                        custom_tab_list_node = node_3 # Points to node_3
+                        for file in custom_tab_list:
+                            node_4 = Node(file, parent = node_3)
+                            node_5 = Node(record_session, parent = node_4)
+    elif index == 2:
+        for option_2 in string_test_list:
+            node_2 = Node(option_2, parent = node_1)
+    elif index == 3:
+        for option_2 in motor_pos_menu:
+            node_2 = Node(option_2, parent = node_1)
 current_node = top_menu_node.children[0]
 
-for index, option in enumerate(top_menu_node.children): # For each option in the menu, populate the
-    for sub_option in sub_menu_list[index]:             # 
-        Node(sub_option, parent = option)               # tree with the sub menu list
+# Un/comment those two lines to print the menu tree
+for pre, fill, node in RenderTree(top_menu_node):
+    print("%s%s" % (pre, node.name))
 
-record_node = search.findall_by_attr(top_menu_node, "Record Mode")[0]
-
-for i, option in enumerate(record_menu):
-    node = Node(option, parent = record_node)
-    if i == 0:
-        Node(new_tab_menu, parent = node)
-
-existing_tab_node = search.findall_by_attr(top_menu_node, record_menu[1])[0]
-
-for file in os.listdir(custom_tab_path):
-    existing_tab.append(str(file))
-    Node(str(file), parent = existing_tab_node)
-
-# Uncomment those two lines to print the menu tree
-# for pre, fill, node in RenderTree(top_menu_node):
-#     print("%s%s" % (pre, node.name))
-
+# END OF TREE /////////////////////////////////////////////////////////////////////////////////////////////
 
 # Define where we are in the tree
 cursor = -1
+previous_cursor = 0
+
+menu_sleeping_time = 0.5 # The time needed to display some useful information
 # ---------------------------------------------------------------------------------------------------------
 
 
@@ -163,7 +182,7 @@ high_offset_from_mid = [40, 40, 40, 40, 40, 40]
 # Array to keep track of the state of servos, HIGH or LOW
 servo_low_position=[True, True, True, True, True, True]
 servo_routine_sleep = 0.5 # Sleep time in the back and forth servo routine
-is_servos_triggering_allowed = False
+
 
 #Set pwm frequency
 pwm_16_channel_module.set_pwm_freq(50)
@@ -176,40 +195,37 @@ pwm_16_channel_module.set_pwm_freq(50)
 
 
 #define functions which will be triggered on pin state changes
-def rotary_pin_A_callback(channel):
+def menu_btn_callback(channel):
     global cursor
 
-    if GPIO.input(rotary_pin_A) == 0: #GPIO callback seems not to work properly, so I have to check that rotary_pin_A is low
-        # Here we only check the pin B, as we know that A fell to LOW, which triggered the callback
-        rotary_pin_B_state = GPIO.input(rotary_pin_B)
+    if GPIO.input(channel) == 0:
 
-        if rotary_pin_B_state == 1:
-            cursor = cursor - 1
-        elif rotary_pin_B_state == 0:
-            cursor = cursor + 1
+        if channel == menu_btn_next:
+            cursor += 1
+        else:
+            cursor -= 1
 
         checkMenuTree()
         updateMenuDisplay()
 
 def validate(channel):
-    global current_menu_index, cursor, is_string_test_running, run_tab_at_startup, current_node, is_servos_triggering_allowed
+    global current_menu_index, cursor, is_string_test_running, run_tab_at_startup, current_node
+    global is_free_mode_on, previous_cursor
 
-    if GPIO.input(rotary_switch) == 0:
+    if GPIO.input(menu_btn_validate) == 0:
         print ("Validate")
         if not current_node.children: # If the current node has no children, it means some actions need to be executed ...
             if current_node.parent.name == main_menu[0]: # = PlayTab
                 lcd_display.lcd_clear()
                 lcd_display.lcd_display_string("Playing :", 1)
-                lcd_display.lcd_display_string(song_list[cursor], 2)
+                lcd_display.lcd_display_string(tab_list[cursor], 2)
                 
                 playTab()
             
             elif current_node.name == practice_menu[0]: # = Free mode
-                is_servos_triggering_allowed = True
+                is_free_mode_on = True
                 startMetronome()
-                lcd_display.lcd_clear()
-                lcd_display.lcd_display_string("Free Mode On !", 1)
-                lcd_display.lcd_display_string("Tempo: " + str(current_tempo), 2)
+                updateMenuDisplay()
 
             elif current_node.parent.name == main_menu[2]: # = Loop test String
                 if not is_string_test_running:
@@ -232,7 +248,7 @@ def validate(channel):
                 time.sleep(menu_sleeping_time)
                 updateMenuDisplay()
 
-            elif current_node == existing_tab_node: # Browsing for existing custom tab, but no file found under 'custom_tab_path'
+            elif current_node == custom_tab_list_node: # Browsing for existing custom tab, but no file found under 'custom_tab_path'
                 lcd_display.lcd_clear()
                 lcd_display.lcd_display_string("No Tab Found !", 1)
                 time.sleep(menu_sleeping_time)
@@ -243,11 +259,15 @@ def validate(channel):
                 lcd_display.lcd_clear()
                 lcd_display.lcd_display_string("Tab Created !", 1)
                 time.sleep(menu_sleeping_time)
+                updateMenuTree() # Need to rescan the existing tab under 'custom_tab_folder'
                 updateMenuDisplay()
 
             
         else:                         # ... otherwise we keep going deeper in the tree
             current_node = current_node.children[0]
+            if current_node.name == new_tab_menu:
+                startMetronome()
+            previous_cursor = cursor #We store where we were in this menu, for later when we will press return
             cursor = 0
             updateMenuDisplay()
     
@@ -255,8 +275,8 @@ def validate(channel):
 
 def back(channel):
     print('back')
-    global cursor, events, is_tab_running, is_string_test_running, current_node, is_servos_triggering_allowed, new_tab_tempo
-    global metronome_on
+    global cursor, events, is_tab_running, is_string_test_running, current_node, new_tab_tempo
+    global is_metronome_on, is_free_mode_on, saved_tempo
     
     new_tab_tempo = default_tempo
 
@@ -274,16 +294,24 @@ def back(channel):
         updateMenuDisplay()
 
     # We do not go back to the parent, we just stop the action, and re-display the current node
-    elif current_node.name == practice_menu[0] and is_servos_triggering_allowed:
-        is_servos_triggering_allowed = False
-        metronome_on = False
+    elif current_node.name == practice_menu[0] and is_metronome_on:
+        is_free_mode_on = False
+        is_metronome_on = False
+        saved_tempo = current_tempo
+        cursor = 0
         updateMenuDisplay()
+
+    elif current_node.name == record_session:
+        current_node = record_mode_node
+        cursor = 0
     
     else:
         if not current_node.parent == top_menu_node: # Prevents from going out of the top node.
+            if current_node.name == new_tab_menu:
+                is_metronome_on = False
             current_node = current_node.parent # We go back to the parent in the menu tree
             #TO DO get the right index
-            cursor = 0
+            cursor = previous_cursor
 
         else: # If we are already at the top level menu, then it just gets back to the first option in the top menu
             current_node = top_menu_node.children[0]
@@ -294,10 +322,15 @@ def back(channel):
 
 
 def checkMenuTree(): #used to loop in the menu
-    global cursor, current_node, new_tab_tempo
+    global cursor, current_node, new_tab_tempo, current_tempo
 
-    if current_node.name == new_tab_menu: # In that case we are changing the tempo with the rotary encoder
-        new_tab_tempo = default_tempo + cursor
+    if current_node.name == new_tab_menu: # In that case we are changing the tempo with the rotary encoder (in new tab menu)
+        new_tab_tempo = default_tempo + (cursor * tempo_interval)
+        current_tempo = new_tab_tempo
+        updateMenuDisplay()
+
+    elif current_node.name == practice_menu[0] and is_free_mode_on:
+        current_tempo = saved_tempo + (cursor * tempo_interval)
         updateMenuDisplay()
 
     else:
@@ -315,8 +348,19 @@ def updateMenuDisplay():
     lcd_display.lcd_clear()
     lcd_display.lcd_display_string(current_node.name,1)
 
-    if current_node.name == new_tab_menu:
-        lcd_display.lcd_display_string(str(new_tab_tempo),2)
+    if current_node.name == new_tab_menu :
+        lcd_display.lcd_display_string("Tempo: " + str(new_tab_tempo),2)
+
+    elif is_free_mode_on :
+        lcd_display.lcd_display_string("Tempo: " + str(current_tempo),2)
+
+    elif current_node.name == record_session:
+        lcd_display.lcd_display_string(current_node.name,1)
+
+    else:
+        # Tell us where we are in the current menu with an index
+        lcd_display.lcd_display_string(str(cursor + 1) + " / " + str(len(current_node.parent.children)), 2)
+
     print(current_node.name)
 
 
@@ -330,9 +374,10 @@ def string_test_loop():
 
 
 # GPIO CALLBACK ----------------------------------------------------------------------------------------------------
-GPIO.add_event_detect(rotary_pin_A, GPIO.FALLING, callback=rotary_pin_A_callback) #SEEMS TO DETECT RISING EDGE ALSO !
-GPIO.add_event_detect(rotary_switch, GPIO.RISING , callback=validate, bouncetime=300)
-GPIO.add_event_detect(back_button, GPIO.FALLING , callback=back, bouncetime=300)
+GPIO.add_event_detect(menu_btn_next, GPIO.FALLING, callback=menu_btn_callback, bouncetime=300) #SEEMS TO DETECT RISING EDGE ALSO !
+GPIO.add_event_detect(menu_btn_previous, GPIO.FALLING, callback=menu_btn_callback, bouncetime=300) #SEEMS TO DETECT RISING EDGE ALSO !
+GPIO.add_event_detect(menu_btn_validate, GPIO.FALLING , callback=validate, bouncetime=300)
+GPIO.add_event_detect(menu_btn_return, GPIO.FALLING , callback=back, bouncetime=300)
 
 GPIO.add_event_detect(btn_servo_1, GPIO.FALLING, callback=lambda x: trigger_servo(0), bouncetime=150)
 GPIO.add_event_detect(btn_servo_2, GPIO.FALLING, callback=lambda x: trigger_servo(1), bouncetime=150)
@@ -342,6 +387,13 @@ GPIO.add_event_detect(btn_servo_5, GPIO.FALLING, callback=lambda x: trigger_serv
 GPIO.add_event_detect(btn_servo_6, GPIO.FALLING, callback=lambda x: trigger_servo(5), bouncetime=150)
 # ------------------------------------------------------------------------------------------------------------------
 
+def updateMenuTree():
+    global custom_tab_list
+    custom_tab_list = []
+
+    for file_name in os.listdir(custom_tab_path):
+        custom_tab_list.append(str(file_name))
+        Node(str(file_name), parent = custom_tab_list_node)
 
 def setServoLowPosition():
     for i in range (0, 6):
@@ -387,13 +439,13 @@ def saveLoop():
     saveTab()
 
 def startMetronome():
-    global metronome_on
+    global is_metronome_on
 
-    metronome_on = True
+    is_metronome_on = True
     metronomeThread()
 
 def metronomeThread():
-    if metronome_on:
+    if is_metronome_on:
         timer = 60 / current_tempo
         threading.Timer(timer, metronomeThread).start()
 
@@ -431,11 +483,7 @@ def playTab(tab_name = None):
         
         #Load tab
         if tab_name == None:
-            song = pygp.parse(tab_path + song_list[cursor])
-        else:
-            song = pygp.parse(tab_name)
-
-        print("Song name = ", song_list[cursor])
+            song = pygp.parse(tab_path + tab_list[cursor])
         print("Tempo = ", song.tempo)
         print("Number of tracks = ", len(song.tracks))
         print("Number of measures = ", len(song.tracks[0].measures))
@@ -480,7 +528,9 @@ def playTab(tab_name = None):
 def trigger_servo(index):
     global servo_low_position
 
-    if is_servos_triggering_allowed and GPIO.input(btn_servo_list[index]) == 0 : 
+
+    if ( not is_tab_running and GPIO.input(btn_servo_list[index]) == 0) or \
+        is_string_test_running or (is_tab_running and GPIO.input(btn_servo_list[index]) == 1): # p
 
         print("String",str(index+1))
         
@@ -492,7 +542,7 @@ def trigger_servo(index):
             servo_low_position[index] = True 
 
 def initialize():
-    setServoMidPosition()
+    #setServoMidPosition()
     lcd_display.lcd_clear()
     lcd_display.lcd_display_string(welcome_msg)
 
