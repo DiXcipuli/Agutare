@@ -73,7 +73,7 @@ def trigger_servo(index):
     global servo_low_position
 
     print("String",str(index+1))
-    
+
     if servo_low_position[index]:
         pwm_16_channel_module.set_pwm(index, 0, servo_mid_position[index] + high_offset_from_mid[index])
         servo_low_position[index] = False
@@ -105,19 +105,19 @@ def createTab(tempo):
         print(i)
 
     current_tab = pygp.Song()
-    track = pygp.Track(current_tab)
-    current_tab.tracks.append(track)
-    measure = track.measures[0]
-    voice = measure.voices[0]
+    for i in range(0,6):    #Create One track per string
+        track = pygp.Track(current_tab)
+        current_tab.tracks.append(track)
 
     print(file_name)
     pygp.write(current_tab, file_name)
 
+    return default_tab_name + str(i) + extension_type
 
 
-def saveLoop():
-    track = current_tab.track[0]
-    header = current_tab.measureHeaders[0]
+def saveLoop(tab):
+    track = tab.track[0]
+    header = tab.measureHeaders[0]
     measure = pygp.Measure(track, header)
     track.measure.append(measure)
 
