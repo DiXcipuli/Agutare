@@ -15,58 +15,58 @@ events = []                         # Will store all the timer, one per note.
             # For tabs which wont be edited
 custom_tab_path = '/home/pi/Documents/RobotizeGuitar/CustomTabs/'   # For own compositions, where measures and notes will be added               # When changing the tempo value, will go 5 by 5 instead of 1 by 1
 default_tab_name = "tab_"           # It wont be able to set the desired tab name when creating one. 
-extension_type = ".gp5"   
+extension_type = ".agu"   
 
 
 #Set pwm frequency
 pwm_16_channel_module.set_pwm_freq(50)
 
-def playTab(tab_name):
-    global is_tab_running, events
+# def playTab(tab_name):
+#     global is_tab_running, events
 
-    #TO DO: is_tab_running false a
+#     #TO DO: is_tab_running false a
 
-    # Set all motors to low position
-    setServoLowPosition()
+#     # Set all motors to low position
+#     setServoLowPosition()
     
-    #Load tab
-    song = pygp.parse(tab_name)
-    print("Tempo = ", song.tempo)
-    print("Number of tracks = ", len(song.tracks))
-    print("Number of measures = ", len(song.tracks[0].measures))
-    print("Number of voices = ", len(song.tracks[0].measures[0].voices))
-    measure_number = 0
-    beats_per_bar = song.measureHeaders[0].timeSignature.numerator
-    for measure in song.tracks[0].measures:
-        measure_time = measure_number * 60 * beats_per_bar / song.tempo
-        for voice in measure.voices:
-            beat_time = 0
-            for beat in voice.beats:
-                note_time = measure_time + beat_time
-                print(note_time)
-                beat_time = beat_time + (beat.duration.time/1000)* (60/song.tempo)
-                if beat.notes:
-                    print("Note time = ", note_time)
+#     #Load tab
+#     song = pygp.parse(tab_name)
+#     print("Tempo = ", song.tempo)
+#     print("Number of tracks = ", len(song.tracks))
+#     print("Number of measures = ", len(song.tracks[0].measures))
+#     print("Number of voices = ", len(song.tracks[0].measures[0].voices))
+#     measure_number = 0
+#     beats_per_bar = song.measureHeaders[0].timeSignature.numerator
+#     for measure in song.tracks[0].measures:
+#         measure_time = measure_number * 60 * beats_per_bar / song.tempo
+#         for voice in measure.voices:
+#             beat_time = 0
+#             for beat in voice.beats:
+#                 note_time = measure_time + beat_time
+#                 print(note_time)
+#                 beat_time = beat_time + (beat.duration.time/1000)* (60/song.tempo)
+#                 if beat.notes:
+#                     print("Note time = ", note_time)
 
-                    for note in beat.notes:
-                        if note.string == 1:
-                            events.append(Timer(note_time, trigger_servo, [0]))
-                        if note.string == 2:
-                            events.append(Timer(note_time, trigger_servo, [1]))
-                        if note.string == 3:
-                            events.append(Timer(note_time, trigger_servo, [2]))
-                        if note.string == 4:
-                            events.append(Timer(note_time, trigger_servo, [3]))
-                        if note.string == 5:
-                            events.append(Timer(note_time, trigger_servo, [4]))
-                        if note.string == 6:
-                            events.append(Timer(note_time, trigger_servo, [5]))
+#                     for note in beat.notes:
+#                         if note.string == 1:
+#                             events.append(Timer(note_time, trigger_servo, [0]))
+#                         if note.string == 2:
+#                             events.append(Timer(note_time, trigger_servo, [1]))
+#                         if note.string == 3:
+#                             events.append(Timer(note_time, trigger_servo, [2]))
+#                         if note.string == 4:
+#                             events.append(Timer(note_time, trigger_servo, [3]))
+#                         if note.string == 5:
+#                             events.append(Timer(note_time, trigger_servo, [4]))
+#                         if note.string == 6:
+#                             events.append(Timer(note_time, trigger_servo, [5]))
                             
 
-        measure_number = measure_number + 1
-    for event in events:
-        event.start()
-    print("---------- Tab is Starting ---------- With ", len(events), " threads" )
+#         measure_number = measure_number + 1
+#     for event in events:
+#         event.start()
+#     print("---------- Tab is Starting ---------- With ", len(events), " threads" )
 
 
 def trigger_servo(index):
@@ -98,47 +98,25 @@ def setServoHighPosition():
 def createTab(tempo):
     global current_tab
     i = 0
-    file_name = custom_tab_path + default_tab_name + str(i) + extension_type
-    while os.path.isfile(file_name): #Check if file already exists
+    dir_name = custom_tab_path + default_tab_name + str(i)
+    while os.path.isdir(dir_name): #Check if dir already exists
         i += 1
-        file_name = custom_tab_path + default_tab_name + str(i) + extension_type
-        print(i)
+        dir_name = custom_tab_path + default_tab_name + str(i)
+    
+    os.mkdir(dir_name)
 
-    current_tab = pygp.Song()
-    for i in range(0,6):    #Create One track per string
-        track = pygp.Track(current_tab)
-        current_tab.tracks.append(track)
+    with open(dir_name + '/' + "Meta.agu" , 'w') as file:
+        file.writelines(["Tempo, " + str(tempo) + '\n', "Beats, 4" + '\n'])
 
-    print(file_name)
-    pygp.write(current_tab, file_name)
-
-    return default_tab_name + str(i) + extension_type
+    with open(dir_name + '/' + "MetaDefault.agu" , 'w') as file:
+        file.writelines(["Tempo, " + str(tempo) + '\n', "Beats, 4" + '\n'])
 
 
-def saveLoop(tab):
-    track = tab.track[0]
-    header = tab.measureHeaders[0]
-    measure = pygp.Measure(track, header)
-    track.measure.append(measure)
-
-    #Filling the created measure
-
-    saveTab()
+    return default_tab_name + str(i)
 
 
-def saveTab():
-    if not path.isdir(custom_tab_path):
-        os.mkdir(custom_tab_path)
-
-    pygp.write(current_tab, custom_tab_path + current_tab_name + extension_type)
-
-def loadTab():
-    #TO DO set the current tab name
-    #current_tab = pygp.parse
-    current_tempo = current_tab.tempo
-
-def clear_events():
-    global events
-    for event in events:
-        event.cancel()   
-    events.clear()
+# def clear_events():
+#     global events
+#     for event in events:
+#         event.cancel()   
+#     events.clear()
