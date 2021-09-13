@@ -1,8 +1,8 @@
 # Hybrid_Guitar Project
 # Made by Antoine Agu (DiXcipuli@gmail.com)
 
-import MenuHandler as mh                                                                                         
-import actions
+import menu_handler as mh                                                                                         
+import functions
 from RPi import GPIO
 import os
 from signal import pause
@@ -73,15 +73,13 @@ def menu_btn_callback(channel):
         menu.update_display()
 
 def servo_btn_callback(index):
-    if not menu.welcome_state:
-        if isinstance(menu.get_current_node(), mh.SessionRecorder.Item): 
-            if menu.get_current_node().current_state in (mh.SessionRecorder.State.RECORDING, mh.SessionRecorder.State.ARMED):
-                menu.get_current_node().save_note(index)
+    if isinstance(menu.get_current_node(), mh.SessionRecorderItem): 
+        if menu.get_current_node().state in (mh.SessionRecorderState.RECORDING, mh.SessionRecorderState.ARMED):
+            menu.get_current_node().save_note(index)
 
-    actions.trigger_servo(index)
+    functions.trigger_servo(index)
     
 def main():
-    menu.display_welcome_msg()
     menu.display_tree()
     pause()
     

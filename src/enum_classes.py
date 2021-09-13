@@ -10,7 +10,10 @@ class TabCreatorState(Enum):
     DEFINING_BEATS = 3
 
 class SessionRecorderState(Enum):
-    NOT_ARMED = 1
-    ARMED = 2
-    RECORDING = 3
-    SAVING = 4
+    IDLE= 1
+    METRONOME_ON = 2
+    ARMED = 3
+    RECORDING = 4
+    SAVING = 5
+    PLAYER_IDLE = 6
+    PLAYER_ON = 7

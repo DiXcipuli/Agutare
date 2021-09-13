@@ -21,52 +21,52 @@ extension_type = ".agu"
 #Set pwm frequency
 pwm_16_channel_module.set_pwm_freq(50)
 
-# def playTab(tab_name):
-#     global is_tab_running, events
+def playTab(tab_name):
+    global is_tab_running, events
 
-#     #TO DO: is_tab_running false a
+    #TO DO: is_tab_running false a
 
-#     # Set all motors to low position
-#     setServoLowPosition()
-    
-#     #Load tab
-#     song = pygp.parse(tab_name)
-#     print("Tempo = ", song.tempo)
-#     print("Number of tracks = ", len(song.tracks))
-#     print("Number of measures = ", len(song.tracks[0].measures))
-#     print("Number of voices = ", len(song.tracks[0].measures[0].voices))
-#     measure_number = 0
-#     beats_per_bar = song.measureHeaders[0].timeSignature.numerator
-#     for measure in song.tracks[0].measures:
-#         measure_time = measure_number * 60 * beats_per_bar / song.tempo
-#         for voice in measure.voices:
-#             beat_time = 0
-#             for beat in voice.beats:
-#                 note_time = measure_time + beat_time
-#                 print(note_time)
-#                 beat_time = beat_time + (beat.duration.time/1000)* (60/song.tempo)
-#                 if beat.notes:
-#                     print("Note time = ", note_time)
+    # Set all motors to low position
+    setServoLowPosition()
 
-#                     for note in beat.notes:
-#                         if note.string == 1:
-#                             events.append(Timer(note_time, trigger_servo, [0]))
-#                         if note.string == 2:
-#                             events.append(Timer(note_time, trigger_servo, [1]))
-#                         if note.string == 3:
-#                             events.append(Timer(note_time, trigger_servo, [2]))
-#                         if note.string == 4:
-#                             events.append(Timer(note_time, trigger_servo, [3]))
-#                         if note.string == 5:
-#                             events.append(Timer(note_time, trigger_servo, [4]))
-#                         if note.string == 6:
-#                             events.append(Timer(note_time, trigger_servo, [5]))
-                            
+    with open(tab_name + "/MetaDefault.agu") as tab_file:
+        lines = tab_file.readlines()
 
-#         measure_number = measure_number + 1
-#     for event in events:
-#         event.start()
-#     print("---------- Tab is Starting ---------- With ", len(events), " threads" )
+    tempo = int(lines[0].split(',')[1].rstrip('\n'))
+    beats_per_loop = int(lines[1].split(',')[1].rstrip('\n'))
+    for i, line in enumerate(lines[2:]):
+        with open(tab_name + '/' + line.rstrip('\n')) as loop_file:
+            loop_notes = loop_file.readlines()
+        for note in loop_notes:
+            note_time = float(note.split(',')[1].rstrip('\n'))
+            note_string = int(note.split(',')[0])
+            events.append(Timer((note_time + i )* beats_per_loop * 60 / tempo, trigger_servo, [note_string]))
+    for event in events:
+        event.start()
+
+    # #Load tab
+    # song = pygp.parse(tab_name)
+    # print("Tempo = ", song.tempo)
+    # print("Number of tracks = ", len(song.tracks))
+    # print("Number of measures = ", len(song.tracks[0].measures))
+    # measure_number = 0
+    # beats_per_bar = song.measureHeaders[0].timeSignature.numerator
+    # for measure in song.tracks[0].measures:
+    #     measure_time = measure_number * 60 * beats_per_bar / song.tempo
+    #     for voice in measure.voices:
+    #         beat_time = 0
+    #         for beat in voice.beats:
+    #             note_time = measure_time + beat_time
+    #             print(note_time)
+    #             beat_time = beat_time + (beat.duration.time/1000)* (60/song.tempo)
+    #             if beat.notes:
+    #                 for note in beat.notes:
+    #                     events.append(Timer(note_time, trigger_servo, [note.string - 1]))
+
+    #     measure_number = measure_number + 1
+    # for event in events:
+    #     event.start()
+    # print("---------- Tab is Starting ---------- With ", len(events), " threads" )
 
 
 def trigger_servo(index):
@@ -95,7 +95,7 @@ def setServoHighPosition():
         servo_low_position[i] = False
         pwm_16_channel_module.set_pwm(i, 0, servo_mid_position[i]  + high_offset_from_mid[i])
 
-def createTab(tempo):
+def createTab(tempo, beats):
     global current_tab
     i = 0
     dir_name = custom_tab_path + default_tab_name + str(i)
@@ -106,10 +106,10 @@ def createTab(tempo):
     os.mkdir(dir_name)
 
     with open(dir_name + '/' + "Meta.agu" , 'w') as file:
-        file.writelines(["Tempo, " + str(tempo) + '\n', "Beats, 4" + '\n'])
+        file.writelines(["Tempo, " + str(tempo) + '\n', "Beats, " + str(beats) + '\n'])
 
     with open(dir_name + '/' + "MetaDefault.agu" , 'w') as file:
-        file.writelines(["Tempo, " + str(tempo) + '\n', "Beats, 4" + '\n'])
+        file.writelines(["Tempo, " + str(tempo) + '\n', "Beats, " + str(beats) + '\n'])
 
 
     return default_tab_name + str(i)
