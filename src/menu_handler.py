@@ -1,21 +1,17 @@
 from anytree import NodeMixin, RenderTree
-from RPi import GPIO
 import I2C_LCD_driver
-import functions
 import os
 import threading
 import time
 import guitarpro as pygp
 from threading import Timer
-from enum_classes import MetronomeState, TabCreatorState, SessionRecorderState
+from enum_classes import TabCreatorState, SessionRecorderState
+from metronome import metronome
+from servos import servo
+from tab_manager import tab_manager
+from gpiozero import Button
 
-GPIO.setmode(GPIO.BCM)
 
-buzzer_pin = 12 
-buzzer_freq = 440
-buzzer_duration = 0.07
-GPIO.setup(buzzer_pin, GPIO.OUT)
-buzzer_pwm = GPIO.PWM(buzzer_pin, buzzer_freq)
 default_tempo = 60
 default_beats_per_loop = 4
 
@@ -77,15 +73,14 @@ class BasicMenuItem(NodeMixin):
     def node_type(self):
         return "BasicMenuItem"
 
+
 class TabPlayerItem(BasicMenuItem): #text_to_display has to be the tab name as follow: 'ComeAsYouAre.gp3'
     def __init__(self, node_name, index, size, text_to_display, parent = None, children = None):
         super().__init__(node_name, index, size, text_to_display, parent, children)
-        self.is_tab_palying = False
-        self.events = []
+
 
     def execute(self):
         if not self.is_tab_palying:
-            self.is_tab_palying = True
             self.update_display()
             self.playTab(self.tab_path + self.text_to_display)
         return self
@@ -106,40 +101,11 @@ class TabPlayerItem(BasicMenuItem): #text_to_display has to be the tab name as f
         else:
             super().update_display()
 
-    def playTab():
-        # Set all motors to low position
-        actions.setServoLowPosition()
-        
-        #Load tab
-        song = pygp.parse(tab_path + self.node_name)
-        print("Tempo = ", song.tempo)
-        print("Number of tracks = ", len(song.tracks))
-        print("Number of measures = ", len(song.tracks[0].measures))
-        measure_number = 0
-        beats_per_bar = song.measureHeaders[0].timeSignature.numerator
-        for measure in song.tracks[0].measures:
-            measure_time = measure_number * 60 * beats_per_bar / song.tempo
-            for voice in measure.voices:
-                beat_time = 0
-                for beat in voice.beats:
-                    note_time = measure_time + beat_time
-                    beat_time = beat_time + (beat.duration.time/1000)* (60/song.tempo)
-                    if beat.notes:
-                        for note in beat.notes:
-                            self.events.append(Timer(note_time, trigger_servo, [note.string - 1]))
-                                
-            measure_number = measure_number + 1
-        for event in self.events:
-            event.start()
-        print("-- Tab is Starting -- With ", len(events), " threads" )
 
-    def clear_events():
-        for event in self.events:
-            event.cancel()   
-        events.clear()
 
     def node_type(self):
         return "TabPlayerItem"
+
 
 class StringTestItem(BasicMenuItem):
     def __init__(self, node_name, index, size, text_to_display, parent = None, children = None):
@@ -156,7 +122,7 @@ class StringTestItem(BasicMenuItem):
             
     def string_test_loop(self):
         while self.is_string_test_running:
-            actions.trigger_servo(self.index)
+            servo.trigger_servo(self.index)
             time.sleep(self.servo_routine_sleep)
 
     def back_in_menu(self):
@@ -176,17 +142,18 @@ class StringTestItem(BasicMenuItem):
     def node_type(self):
         return "StringTestItem"
 
+
 class ServoPositionItem(BasicMenuItem):
     def __init__(self, node_name, index, size, text_to_display, parent = None, children = None):
         super().__init__(node_name, index, size, text_to_display, parent, children)
 
     def execute(self):
         if self.index == 0: # Servo to LOW position
-            actions.setServoLowPosition()
+            servo.setServoLowPosition()
         elif self.index == 1:
-            actions.setServoMidPosition()
+            servo.setServoMidPosition()
         elif self.index == 2:
-            actions.setServoHighPosition()
+            servo.setServoHighPosition()
 
         lcd_display.lcd_clear()
         lcd_display.lcd_display_string("Set !", 1)
@@ -197,39 +164,37 @@ class ServoPositionItem(BasicMenuItem):
     def node_type(self):
         return "ServoPositionItem"
 
-class MetronomeItem(BasicMenuItem):
+
+class FreePlayItem(BasicMenuItem):
     def __init__(self, node_name, index, size, text_to_display, parent = None, children = None):
         super().__init__(node_name, index, size, text_to_display, parent, children)
-        self.current_tempo = default_tempo
-        self.tempo_factor = 5
-        self.state = MetronomeState.IDLE
+        #self.metronome = Metronome()
         
     def next(self):
-        if self.state == MetronomeState.DEFINING_TEMPO:
-            self.current_tempo = self.current_tempo + self.tempo_factor
+        if metronome.is_metronome_active:
+            metronome.increase_tempo()
             return self
         else:
             return super().next()
         
     def previous(self):
-        if self.state == MetronomeState.DEFINING_TEMPO:
-            self.current_tempo = self.current_tempo - self.tempo_factor
+        if metronome.is_metronome_active:
+            metronome.decrease_tempo()
             return self
         else:
             return super().next()
         
 
     def execute(self):
-        if self.state == MetronomeState.IDLE:
-            self.state = MetronomeState.DEFINING_TEMPO
-            self.metronomeThread()
+        if not metronome.is_metronome_active:
+            metronome.start_metronome()
         else:
-            self.current_tempo = default_tempo
+            metronome.reset_tempo()
         return self
 
     def back_in_menu(self):
-        if self.state == MetronomeState.DEFINING_TEMPO:
-            self.state = MetronomeState.IDLE
+        if metronome.is_metronome_active:
+            metronome.stop_metronome()
             return self
         else:
             return self.parent
@@ -238,53 +203,38 @@ class MetronomeItem(BasicMenuItem):
         lcd_display.lcd_clear()
         lcd_display.lcd_display_string(self.text_to_display, 1)
 
-        if self.state == MetronomeState.DEFINING_TEMPO:
-            lcd_display.lcd_display_string(str(self.current_tempo), 2)
+        if metronome.is_metronome_active:
+            lcd_display.lcd_display_string(str(metronome.tempo), 2)
         else:
             lcd_display.lcd_display_string(self.pos_indication, 2)
 
 
-    def metronomeThread(self):
-        if self.state == MetronomeState.DEFINING_TEMPO:
-            timer = 60 / self.current_tempo
-            threading.Timer(timer, self.metronomeThread).start()
-
-            #Trigger the buzzer to a specify pwm frequency
-            buzzer_pwm.start(50) # Duty cycle, between 0 and 100
-            time.sleep(buzzer_duration)
-            buzzer_pwm.stop()
-            #Uncomment to check th number of Thread object running
-            #print(threading.active_count())
-
     def node_type(self):
-        return "MetronomeItem"
+        return "FreePlayItem"
 
 
 class TabCreatorItem(BasicMenuItem):
     def __init__(self, node_name, index, size, text_to_display, parent = None, children = None):
         super().__init__(node_name, index, size, text_to_display, parent, children)
-        self.current_tempo = default_tempo
-        self.saved_tempo = default_tempo
-        self.tempo_factor = 5
         self.state = TabCreatorState.IDLE
-        self.beats_per_loop = default_beats_per_loop
+        #self.metronome = Metronome()
 
     def next(self):
         if self.state == TabCreatorState.DEFINING_TEMPO:
-            self.current_tempo = self.current_tempo + self.tempo_factor
+            metronome.increase_tempo()
             return self
         elif self.state == TabCreatorState.DEFINING_BEATS:
-            self.beats_per_loop += 1
+            metronome.increase_beats_per_loop()
             return self
         else:
             return super().next()
         
     def previous(self):
         if self.state == TabCreatorState.DEFINING_TEMPO:
-            self.current_tempo = self.current_tempo - self.tempo_factor
+            metronome.decrease_tempo()
             return self
         elif self.state == TabCreatorState.DEFINING_BEATS:
-            self.beats_per_loop -= 1
+            metronome.decrease_beats_per_loop()
             return self
         else:
             return super().next()
@@ -293,18 +243,18 @@ class TabCreatorItem(BasicMenuItem):
     def execute(self):
         if self.state == TabCreatorState.IDLE:
             self.state = TabCreatorState.DEFINING_TEMPO
-            self.metronomeThread()
+            metronome.start_metronome()
         elif self.state == TabCreatorState.DEFINING_TEMPO:
             self.state = TabCreatorState.DEFINING_BEATS
+            metronome.stop_metronome()
         elif self.state == TabCreatorState.DEFINING_BEATS:
             self.state = TabCreatorState.IDLE
-            tab_name = functions.createTab(self.current_tempo, self.beats_per_loop)
+            tab_name = tab_manager.createTab(metronome.tempo, metronome.beats_per_loop)
             lcd_display.lcd_clear()
             lcd_display.lcd_display_string(tab_name, 1)
             lcd_display.lcd_display_string("Created !", 2)
             time.sleep(menu_sleeping_time)
             self.children[0].node_name = str(tab_name)
-            self.children[0].current_tempo = self.current_tempo
             return self.children[0]
         return self
 
@@ -313,9 +263,11 @@ class TabCreatorItem(BasicMenuItem):
             return self.parent
         elif self.state == TabCreatorState.DEFINING_TEMPO:
             self.state = TabCreatorState.IDLE
+            metronome.stop_metronome()
             return self
         elif self.state == TabCreatorState.DEFINING_BEATS:
             self.state = TabCreatorState.DEFINING_TEMPO
+            metronome.start_metronome()
             return self
 
     def update_display(self):
@@ -326,24 +278,11 @@ class TabCreatorItem(BasicMenuItem):
             lcd_display.lcd_display_string(self.pos_indication, 2)
         elif self.state == TabCreatorState.DEFINING_TEMPO:
             lcd_display.lcd_display_string("Tempo?", 1)
-            lcd_display.lcd_display_string(str(self.current_tempo), 2)
+            lcd_display.lcd_display_string(str(metronome.tempo), 2)
         elif self.state == TabCreatorState.DEFINING_BEATS:
             lcd_display.lcd_display_string("Beats in loop?", 1)
-            lcd_display.lcd_display_string(str(self.beats_per_loop), 2)
-            
+            lcd_display.lcd_display_string(str(metronome.beats_per_loop), 2)
 
-
-    def metronomeThread(self):
-        if self.state == TabCreatorState.DEFINING_TEMPO:
-            timer = 60 / self.current_tempo
-            threading.Timer(timer, self.metronomeThread).start()
-
-            #Trigger the buzzer to a specify pwm frequency
-            buzzer_pwm.start(50) # Duty cycle, between 0 and 100
-            time.sleep(buzzer_duration)
-            buzzer_pwm.stop()
-            #Uncomment to check th number of Thread object running
-            #print(threading.active_count())
 
     def node_type(self):
         return "TabCreatorItem"
@@ -353,79 +292,84 @@ class SessionRecorderItem(BasicMenuItem):
     def __init__(self, node_name, index, size, text_to_display, parent, pseudo_parent, children = None):
         super().__init__(node_name, index, size, text_to_display, parent, children)
         self.bars_to_record = default_bars_to_record
-        self.current_beat = 0
-        self.current_tempo = default_tempo
         self.state = SessionRecorderState.IDLE
         self.pseudo_parent = pseudo_parent
-        self.bar_starting_time = 0
-        self.saved_notes_list = [[] for i in range(6)]  #Contains the time where the string was triggered, not the duration yet
-        self.pre_record_list = [False, False, False, False, False, False]
-        self.sorted_notes_list = []
-        self.events = []
+        
         self.nb_of_loops = 0
         self.selected_loop = 0
 
-    def clear_saved_notes(self):
-        self.saved_notes_list = [[] for i in range(6)]  
-        self.pre_record_list = [False, False, False, False, False, False]
-        self.sorted_notes_list = []
 
     def execute(self):
         if self.state == SessionRecorderState.IDLE:
+            metronome.start_metronome(self.metronome_callback)
             self.state = SessionRecorderState.METRONOME_ON
-            self.metronomeThread()
         elif self.state == SessionRecorderState.METRONOME_ON:
-            self.current_beat = 0 # Reset the beat
+            metronome.current_beat = 0 # Reset the beat
             self.state = SessionRecorderState.ARMED
         elif self.state == SessionRecorderState.ARMED:
             self.state = SessionRecorderState.IDLE
+            tab_manager.clear_saved_notes()
+            metronome.stop_metronome()
         elif self.state == SessionRecorderState.PLAYER_IDLE:
-            functions.playTab(custom_tab_path + self.node_name)
+            self.state = SessionRecorderState.PLAYER_SELECTION
+        elif self.state == SessionRecorderState.PLAYER_SELECTION: 
+            self.state = SessionRecorderState.PLAYER_ON
+            tab_manager.play_tab(custom_tab_path + self.node_name, True,  self.selected_loop)
         elif self.state == SessionRecorderState.SAVING:
-            self.saveLoop()
+            tab_manager.saveLoop()
+            self.nb_of_loops =  tab_manager.load_tab_info(self.node_name)[0]
+            self. selected_loop = self.nb_of_loops
             self.state = SessionRecorderState.IDLE
-            self.clear_events()
-            self.clear_saved_notes()
+            tab_manager.clear_events()
+            tab_manager.clear_saved_notes()
         
         return self
 
-    def metronomeThread(self):
-        if self.state in (SessionRecorderState.METRONOME_ON, SessionRecorderState.ARMED, SessionRecorderState.RECORDING) :
-            timer = 60 / self.current_tempo
-            threading.Timer(timer, self.metronomeThread).start()
+    def end_tab_callback(self):
+        self.state = SessionRecorderState.PLAYER_IDLE
+        self.update_display()
 
-            buzzer_pwm.start(50) # Duty cycle, between 0 and 100
-            if self.state == SessionRecorderState.ARMED or self.state == SessionRecorderState.RECORDING:
-                self.current_beat += 1 
-            if self.current_beat > self.beats:
-                self.current_beat = 1
-                if self.state == SessionRecorderState.ARMED:
-                    self.state = SessionRecorderState.RECORDING
-                    self.bar_starting_time = time.time()
-                elif self.state == SessionRecorderState.RECORDING:
-                    self.process_loop()
-                    self.state = SessionRecorderState.SAVING
-            
-            self.update_display()
 
-            time.sleep(buzzer_duration)
-            buzzer_pwm.stop()
+    def metronome_callback(self, overflow):
+        print(metronome.current_beat)
+
+        if overflow:
+            if self.state == SessionRecorderState.ARMED:
+                self.state = SessionRecorderState.RECORDING
+                tab_manager.bar_starting_time = time.time()
+            elif self.state == SessionRecorderState.RECORDING:
+                tab_manager.process_loop()
+                metronome.stop_metronome()
+                self.state = SessionRecorderState.SAVING
+                
+        self.update_display()
+
 
     def next(self): # Here the next button increases the number of beats to be recorded
         if self.state in (SessionRecorderState.IDLE, SessionRecorderState.METRONOME_ON):
             self.state = SessionRecorderState.PLAYER_IDLE
         elif self.state == SessionRecorderState.PLAYER_IDLE:
             self.state = SessionRecorderState.IDLE
+        elif self.state == SessionRecorderState.PLAYER_SELECTION:
+            self.selected_loop +=1
+            if self.selected_loop > self.nb_of_loops:
+                self.selected_loop = 1
 
         return self
+
 
     def previous(self): # Here the previous button triggers and stop the metronome
         if self.state in (SessionRecorderState.IDLE, SessionRecorderState.METRONOME_ON):
             self.state = SessionRecorderState.PLAYER_IDLE
         elif self.state == SessionRecorderState.PLAYER_IDLE:
             self.state = SessionRecorderState.IDLE
+        elif self.state == SessionRecorderState.PLAYER_SELECTION:
+            self.selected_loop -=1
+            if self.selected_loop < 1:
+                self.selected_loop = self.nb_of_loops
 
         return self
+
 
     def back_in_menu(self):
         if self.state == SessionRecorderState.IDLE:
@@ -435,25 +379,32 @@ class SessionRecorderItem(BasicMenuItem):
             return self
         elif self.state == SessionRecorderState.METRONOME_ON:
             self.state = SessionRecorderState.IDLE
+            metronome.stop_metronome()
             return self
         elif self.state == SessionRecorderState.ARMED:
             self.state = SessionRecorderState.IDLE
+            metronome.stop_metronome()
             return self
         elif self.state == SessionRecorderState.RECORDING:
-            self.clear_saved_notes()
+            tab_manager.clear_saved_notes()
+            metronome.stop_metronome()
             self.state = SessionRecorderState.IDLE
             return self
         elif self.state == SessionRecorderState.SAVING:
             self.state = SessionRecorderState.IDLE
-            self.clear_saved_notes()
-            self.clear_events()
+            tab_manager.clear_saved_notes()
+            tab_manager.clear_events()
             #CLEAR EVENT LIST
             return self
-    
-    def clear_events(self):
-        for event in self.events:
-            event.cancel()
-        self.events = []
+        elif self.state == SessionRecorderState.PLAYER_ON:
+            self.state = SessionRecorderState.PLAYER_IDLE
+            tab_manager.clear_events()
+            return self
+        elif self.state == SessionRecorderState.PLAYER_SELECTION:
+            self.state = SessionRecorderState.PLAYER_IDLE
+            tab_manager.clear_events()
+            return self
+
 
     def update_display(self):
         lcd_display.lcd_clear()
@@ -464,99 +415,38 @@ class SessionRecorderItem(BasicMenuItem):
             lcd_display.lcd_display_string("Not Armed", 1)
             lcd_display.lcd_display_string("Metron. On   " + "1/2", 2)
         elif self.state == SessionRecorderState.ARMED:
-            lcd_display.lcd_display_string("Armed " + str(self.current_beat), 1)
+            lcd_display.lcd_display_string("Armed " + str(metronome.current_beat), 1)
         elif self.state == SessionRecorderState.RECORDING:
-            lcd_display.lcd_display_string("Recording " + str(self.current_beat), 1)
+            lcd_display.lcd_display_string("Recording " + str(metronome.current_beat), 1)
         elif self.state == SessionRecorderState.SAVING:
             lcd_display.lcd_display_string("Save Loop ?", 1)
         elif self.state == SessionRecorderState.PLAYER_IDLE:
+            lcd_display.lcd_display_string("PLAYER:", 1)
+            lcd_display.lcd_display_string("2/2", 2)
+        elif self.state == SessionRecorderState.PLAYER_SELECTION:
             lcd_display.lcd_display_string("Play from loop:", 1)
             if self.nb_of_loops == 0:
-                lcd_display.lcd_display_string("No loop rec " + "2/2", 2)
+                lcd_display.lcd_display_string("No loop rec. yet", 2)
             else:
-                lcd_display.lcd_display_string("Loop nb: " + str(self.selected_loop), 2)
-
-    def save_note(self, index):
-        if self.state == SessionRecorderState.ARMED:
-            self.pre_record_list[index] = True
-        elif self.state == SessionRecorderState.RECORDING:
-            note_start_time = time.time() - self.bar_starting_time
-            self.saved_notes_list[index].append(note_start_time)
-
-    def process_loop(self): # No matter the loop is saved or note, some process is done
-        self.sorted_notes_list = []
-
-        # List all notes, sorted by time, in order to print them.
-        for i in range(0, 6):
-            if self.pre_record_list[i]:
-                self.sorted_notes_list.append((i,0))
-            for j in range(0, len(self.saved_notes_list[i])):
-                self.sorted_notes_list.append((i,self.saved_notes_list[i][j]))
-
-        self.sorted_notes_list = sorted(self.sorted_notes_list, key = lambda tup: tup[1])
-        
-        self.print_saved_notes()
-
-        # Reset List of notes
-        self.pre_record_list = [False, False, False, False, False, False]
-        self.saved_notes_list = [[] for i in range(6)]
-        self.bar_starting_time = 0
-
-        self.replay_loop()
+                lcd_display.lcd_display_string(str(self.selected_loop), 2)
+        elif self.state == SessionRecorderState.PLAYER_ON:
+            lcd_display.lcd_display_string("PLAYING ! :", 1)
     
-    def replay_loop(self):
-        for i in range(0, 5):
-            for string, time in self.sorted_notes_list:
-                self.events.append(Timer(time + (i * self.beats * 60/self.current_tempo), functions.trigger_servo, [string]))
-                print(time + (i * self.beats * 60/self.current_tempo))
-
-        for event in self.events:
-            event.start()
-        
-    def print_saved_notes(self):
-        #In term of note starting time in seconds
-        print("|------------------------------------------------------")
-        print("| Loop recorded over " + str(self.bars_to_record) + " beats")
-        print("|------------------------------------------------------")
-        print("|   String id     |      starting time (in s)")
-        print("|------------------------------------------------------")
-        for i, time in self.sorted_notes_list:
-            print("|   String " + str(i + 1) + "      |      " + str(time) + " s")
-
-        print("|------------------------------------------------------")
-
 
     def on_focus(self):
-        self.load_tab_info()
+        tab_manager.set_callback(self.end_tab_callback)
+        self.nb_of_loops, tempo = tab_manager.load_tab_info(self.node_name)
+        metronome.tempo = tempo
+        self.selected_loop = self.nb_of_loops
+        servo.set_callback_func(self.servo_callback)
+
+    
+    def servo_callback(self, index):
+        if self.state == SessionRecorderState.ARMED:
+            tab_manager.save_note(index, 0)
+        elif self.state == SessionRecorderState.RECORDING:
+            tab_manager.save_note(index, 1)
         
-
-    def load_tab_info(self):
-        #The tab name is already stored at this point, we only need to update:
-        #   -tempo
-        #   -beats
-        #   -nb of loops
-        with open(custom_tab_path + self.node_name + "/MetaDefault.agu") as file:
-            lines = file.readlines()
-            self.current_tempo = int(lines[0].split(',')[1])
-            self.beats = int(lines[1].split(',')[1])
-            self.nb_of_loops = len(lines) - 2
-            self.selected_loop = self.nb_of_loops
-
-    def saveLoop(self):
-        i = 0
-        loop_file = custom_tab_path + self.node_name + '/' + "Loop_" + str(i)
-        while os.path.isfile(loop_file):
-            i += 1
-            loop_file = custom_tab_path + self.node_name + '/' + "Loop_" + str(i)
-
-        with open(loop_file, 'w') as saved_file:
-            for string, time in self.sorted_notes_list:
-                saved_file.write(str(string) + "," + str(time / self.beats) + '\n')
-
-        with open('../CustomTabs/' + self.node_name + "/MetaDefault.agu", 'a') as saved_file:
-            saved_file.write("Loop_" + str(i) + '\n')
-
-        self.load_tab_info()
 
     def node_type(self):
         return "SessionRecorderItem"
@@ -580,7 +470,7 @@ class MenuHandler:  # This class will create the whole tree, and will be used to
 
         # Level 2_2 (Inside 'Practice' menu)
         level_2_2_size = 2
-        self.metronome_node = MetronomeItem("metronome_node", 0, level_2_2_size, "Metronome", self.practice_node)
+        self.metronome_node = FreePlayItem("freeplay_node", 0, level_2_2_size, "Metronome", self.practice_node)
         self.record_node = BasicMenuItem("record_node", 1, level_2_2_size, "Record", self.practice_node)
         
         # Level 2_3 (Inside 'String test' menu)
@@ -604,6 +494,23 @@ class MenuHandler:  # This class will create the whole tree, and will be used to
 
         self.current_node = self.play_tab_node
         self.update_display()
+        self.set_inputs()
+
+    def set_inputs(self):
+        menu_btn_next_pin = 4               #
+        menu_btn_previous_pin = 17          # Buttons to browse the menu
+        menu_btn_validate_pin =27           #
+        menu_btn_return_pin = 22            #
+
+        menu_btn_next = Button(menu_btn_next_pin)
+        menu_btn_next.when_pressed = lambda x: self.next()
+        menu_btn_previous = Button(menu_btn_previous_pin)
+        menu_btn_previous.when_pressed = lambda x: self.previous()
+        menu_btn_execute = Button(menu_btn_validate_pin)
+        menu_btn_execute.when_pressed = lambda x: self.execute()
+        menu_btn_return = Button(menu_btn_return_pin)
+        menu_btn_return.when_pressed = lambda x: self.back_in_menu()
+
 
     def get_current_node(self):
         return self.current_node
@@ -613,24 +520,28 @@ class MenuHandler:  # This class will create the whole tree, and will be used to
         self.current_node = self.current_node.execute()
         if not self.current_node is previous_node:
             self.current_node.on_focus()
+        self.update_display()
 
     def back_in_menu(self):     
         previous_node = self.current_node
         self.current_node = self.current_node.back_in_menu()
         if not self.current_node is previous_node:
             self.current_node.on_focus()
+        self.update_display()
     
     def next(self):
         previous_node = self.current_node
         self.current_node = self.current_node.next()
         if not self.current_node is previous_node:
             self.current_node.on_focus()
+        self.update_display()
 
     def previous(self):
         previous_node = self.current_node
         self.current_node = self.current_node.previous()
         if not self.current_node is previous_node:
             self.current_node.on_focus()
+        self.update_display()
 
     def update_display(self):
         self.current_node.update_display()

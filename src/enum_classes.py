@@ -1,9 +1,5 @@
 from enum import Enum
 
-class MetronomeState(Enum):
-    IDLE = 1
-    DEFINING_TEMPO = 2
-
 class TabCreatorState(Enum):
     IDLE = 1
     DEFINING_TEMPO = 2
@@ -16,4 +12,5 @@ class SessionRecorderState(Enum):
     RECORDING = 4
     SAVING = 5
     PLAYER_IDLE = 6
-    PLAYER_ON = 7
+    PLAYER_SELECTION = 7
+    PLAYER_ON = 8
