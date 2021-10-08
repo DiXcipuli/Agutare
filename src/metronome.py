@@ -5,6 +5,7 @@ from time import sleep
 
 class Metronome():
     SEC_IN_MIN = 60
+    DEFAULT_TEMPO = 60
 
     def __init__(self):
         self.tempo = 60

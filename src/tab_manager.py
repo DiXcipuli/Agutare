@@ -1,3 +1,4 @@
+from types import prepare_class
 import guitarpro as pygp
 from threading import Timer
 import os
@@ -20,6 +21,7 @@ class TabManager:
         self.save_file = "Meta.agu"
 
         self.events = []                    # When playing a tab, each note will create a Threading Timer object, stored in this variable
+        self.loop_repeat_number = 2
         self.bar_starting_time = 0
         self.saved_notes_list = [[] for i in range(6)] 
         # Sometimes when pressing the button on the first beat, we may press it few milli seconds before the beginning of the loop.
@@ -96,7 +98,19 @@ class TabManager:
         return consistent_tabs
 
 
-    def play_tab(self, tab_path, is_agu_file, from_loop = None):
+    # For gpX, the name of the tab corresponds directly to the name of the save file, but for .agu format,
+    # the name of the tab that the user sees on the screen correspond to a folder, in which a .agu file is.
+    # So this function returns the real tab save file, from either a gpX or .agu tab
+    # Return 0 if gpX format, 1 otherwise
+
+    def grab_tab_file_from_name(self, absolute_tab_name):
+        if os.path.isfile(absolute_tab_name):
+            return (absolute_tab_name, 0)
+        elif os.path.isdir(absolute_tab_name):
+            return (os.path.join(absolute_tab_name, self.save_file), 1)
+
+
+    def play_tab(self, tab_path, is_agu_file, from_loop = None, to_loop = None):
 
         if not self.is_tab_playing:
             self.is_tab_playing = True
@@ -113,16 +127,26 @@ class TabManager:
 
                 last_timer = 0
                 start_from = 1
+                end_to = len(lines) - 1
+                pre_event_array = []
+                nb_of_loops = len(lines) - 2
                 if from_loop != None:
                     start_from = from_loop
-                for i, line in enumerate(lines[2 + start_from - 1:]):
+                if to_loop != None:
+                    end_to = to_loop
+                for i, line in enumerate(lines[2 + start_from - 1 : 2 + end_to - 1]):
                     with open(tab_path + '/' + line.rstrip('\n')) as loop_file:
                         loop_notes = loop_file.readlines()
                     for note in loop_notes:
                         note_time = float(note.split(',')[1].rstrip('\n'))
                         note_string = int(note.split(',')[0])
-                        self.events.append(Timer((note_time + i )* beats_per_loop * 60 / tempo, self.servo_manager.trigger_servo, [note_string]))
-                        last_timer = (note_time + i )* beats_per_loop * 60 / tempo
+                        pre_event_array.append(((note_time + i )* beats_per_loop * 60 / tempo, note_string))
+                        
+
+                for i in range (self.loop_repeat_number):
+                    for time, string in pre_event_array:
+                        self.events.append(Timer(time + i * self.beats * 60/self.current_tempo * nb_of_loops, self.servo_manager.trigger_servo, [string]))
+                last_timer = (self.loop_repeat_number - 1) * self.beats * 60/self.current_tempo * nb_of_loops + pre_event_array[-1][0]
                 
                 self.events.append(Timer(last_timer + 0.2, self.end_tab_callback))
 
@@ -130,6 +154,7 @@ class TabManager:
                     event.start()
 
             else :
+                last_timer = 0
                 song = pygp.parse(tab_path)
                 print("Tempo = ", song.tempo)
                 print("Number of tracks = ", len(song.tracks))
@@ -142,13 +167,17 @@ class TabManager:
                         beat_time = 0
                         for beat in voice.beats:
                             note_time = measure_time + beat_time
-                            print(note_time)
-                            beat_time = beat_time + (beat.duration.time/1000)* (60/song.tempo)
+                            #print(beat.duration.time)
+                            beat_time = beat_time + (beat.duration.time/960)* (60/song.tempo)
                             if beat.notes:
+                                last_timer = note_time
                                 for note in beat.notes:
                                     self.events.append(Timer(note_time, self.servo_manager.trigger_servo, [note.string - 1]))
 
+
                     measure_number = measure_number + 1
+
+                self.events.append(Timer(last_timer + 0.2, self.end_tab_callback))
                 for event in self.events:
                     event.start()
 
@@ -165,7 +194,6 @@ class TabManager:
 
     def set_callback(self, callback):
         self.callback = callback
-
 
 
     def save_note(self, index, mode):
@@ -199,9 +227,9 @@ class TabManager:
     
 
     def replay_loop(self):
-        for i in range(0, 5):
+        for i in range(0, self.loop_repeat_number):
             for string, time in self.sorted_notes_list:
-                self.events.append(Timer(time + (i * self.beats * 60/self.current_tempo), servo.trigger_servo, [string]))
+                self.events.append(Timer(time + (i * self.beats * 60/self.current_tempo), self.servo_manager.trigger_servo, [string]))
 
         for event in self.events:
             event.start()
@@ -229,9 +257,9 @@ class TabManager:
 
         with open(loop_file, 'w') as saved_file:
             for string, time in self.sorted_notes_list:
-                saved_file.write(str(string) + "," + str(time / self.beats) + '\n')
+                saved_file.write(str(string) + "," + str(time / (self.beats * 60 / self.current_tempo)) + '\n')
 
-        with open('../CustomTabs/' + self.tab_name + "/MetaDefault.agu", 'a') as saved_file:
+        with open('../CustomTabs/' + self.tab_name + "/" + self.save_file, 'a') as saved_file:
             saved_file.write("Loop_" + str(i) + '\n')
 
         self.load_tab_info(self.tab_name)
@@ -239,7 +267,7 @@ class TabManager:
 
     def load_tab_info(self, tab_name):
         self.tab_name = tab_name
-        with open(self.custom_tab_path + self.tab_name + "/MetaDefault.agu") as file:
+        with open(self.custom_tab_path + self.tab_name + "/" + self.save_file) as file:
             lines = file.readlines()
             self.current_tempo = int(lines[0].split(',')[1])
             self.beats = int(lines[1].split(',')[1])

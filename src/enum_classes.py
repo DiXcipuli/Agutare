@@ -12,5 +12,6 @@ class SessionRecorderState(Enum):
     RECORDING = 4
     SAVING = 5
     PLAYER_IDLE = 6
-    PLAYER_SELECTION = 7
-    PLAYER_ON = 8
+    PLAYER_SELECTION_START = 7
+    PLAYER_SELECTION_END = 8
+    PLAYER_ON = 9
