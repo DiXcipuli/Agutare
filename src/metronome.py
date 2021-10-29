@@ -52,6 +52,15 @@ class Metronome():
     def current_beat(self, cb):
         self._current_beat = cb
 
+    @property
+    def beats_per_loop(self):
+        return self._beats_per_loop
+
+
+    @beats_per_loop.setter
+    def beats_per_loop(self, beat):
+        self._beats_per_loop = beat
+
 
     def increase_tempo(self):
         self.tempo += self.tempo_factor

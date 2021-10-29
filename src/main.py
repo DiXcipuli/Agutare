@@ -1,4 +1,4 @@
-# Aguitar Project
+# Aguitare Project
 # Made by Antoine Agu (DiXcipuli@gmail.com, www.DiXcipuli.com)
 
 import metronome as metro       # Manages the metronome
@@ -11,15 +11,14 @@ from RPi import GPIO
 
 GPIO.setmode(GPIO.BCM)
 
-tab_path = '/home/pi/Documents/Aguitare/Tabs/'                  # path to tabs that are finished, ready to be played
-custom_tab_path = '/home/pi/Documents/Aguitare/CustomTabs/'     # path to tabs the user is working on, that will be edited and modified
+tabs_path = '/home/pi/Documents/Aguitare/tabs/'
 
     
 def main():
 
     metronome = metro.Metronome()
     servo_manager = sm.ServoManager()
-    tab_manager = tm.TabManager(servo_manager, tab_path, custom_tab_path)
+    tab_manager = tm.TabManager(servo_manager, tabs_path)
 
     menu_manager = mm.MenuManager(metronome, servo_manager, tab_manager)
     
