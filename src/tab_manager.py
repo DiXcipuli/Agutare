@@ -120,7 +120,7 @@ class TabManager:
             self.is_tab_playing = True
 
             # Set all servos to low position
-            self.servo_manager.setServoLowPosition()
+            self.servo_manager.setAllServosLowPosition()
 
             if is_agu_file:
                 with open(absolute_tab_path) as tab_file:
@@ -206,9 +206,10 @@ class TabManager:
                 for event in self.events:
                     event.start()
 
-            except RuntimeError:
+            except RuntimeError as e:
                 print("If an error occurs below, complaining about not being able to create more threads, then \
                 you will have to lower the size allocated to ")
+                print(e)
 
 
 

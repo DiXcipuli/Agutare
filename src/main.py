@@ -12,12 +12,13 @@ from RPi import GPIO
 GPIO.setmode(GPIO.BCM)
 
 tabs_path = '/home/pi/Documents/Aguitare/tabs/'
+pwm_file_path = '/home/pi/Documents/Aguitare/pwm_value.txt'
 
     
 def main():
 
     metronome = metro.Metronome()
-    servo_manager = sm.ServoManager()
+    servo_manager = sm.ServoManager(pwm_file_path)
     tab_manager = tm.TabManager(servo_manager, tabs_path)
 
     menu_manager = mm.MenuManager(metronome, servo_manager, tab_manager)

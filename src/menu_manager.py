@@ -209,11 +209,11 @@ class ServosPositionNode(BasicMenuNode): # Set all servos to either, Low, Mid or
 
     def execute(self):
         if self.index == 0: # Servo to LOW position
-            self.servo_manager.setServoLowPosition()
+            self.servo_manager.setAllServosLowPosition()
         elif self.index == 1:
-            self.servo_manager.setServoMidPosition()
+            self.servo_manager.setAllServosMidPosition()
         elif self.index == 2:
-            self.servo_manager.setServoHighPosition()
+            self.servo_manager.setAllServosHighPosition()
 
         self.lcd_display.lcd_clear()
         self.lcd_display.lcd_display_string("Set !", 1)
@@ -360,6 +360,73 @@ class TabCreatorNode(BasicMenuNode):
     def node_type(self):
         return "TabCreatorNode"
 
+
+class PwmEditorNode(BasicMenuNode):
+    def __init__(self, node_name, index, size, lcd_display, text_to_display, servo_manager, parent=None, children=None):
+        super().__init__(node_name, index, size, lcd_display, text_to_display, parent=parent, children=children)
+        self.servo_manager = servo_manager
+        self.associated_string = self.parent.parent.index
+        self.increment = 10
+    
+    def next(self):
+        self.pwm_value += self.increment
+        self.write_pwm_value()
+        self.set_pwm_value()
+        self.servo_manager.update_pwm_value(self.associated_string, self.index, self.pwm_value)
+        return self
+
+    def previous(self):
+        self.pwm_value -= self.increment
+        self.write_pwm_value()
+        self.set_pwm_value()
+        self.servo_manager.update_pwm_value(self.associated_string, self.index, self.pwm_value)
+        return self
+
+
+    def write_pwm_value(self):
+        lines = []
+        with open(self.servo_manager.pwm_file_path) as pwm_file:
+            lines = pwm_file.readlines()
+            new_line = lines[self.associated_string].split(',')
+            new_line[self.index] = str(self.pwm_value)
+            new_line = ','.join(new_line)
+            lines[self.associated_string] = new_line
+
+        with open(self.servo_manager.pwm_file_path, 'w') as pwm_file:
+            pwm_file.writelines(lines)
+
+
+
+    def on_focus(self):
+        self.read_pwm_file()
+        self.set_pwm_value()
+
+    def set_pwm_value(self):
+        if self.index in (0, 2):
+            value_to_send = self.pwm_mid_value + self.pwm_value
+        else:
+            value_to_send = self.pwm_value
+
+        print("value sent is {}".format(value_to_send))
+        self.servo_manager.set_servo_pwm(self.associated_string, value_to_send)
+
+
+    def read_pwm_file(self):
+        with open(self.servo_manager.pwm_file_path) as pwm_file:
+            pwm_line = pwm_file.readlines()[self.associated_string].split(',')
+            self.pwm_value = int(pwm_line[self.index])
+            # We need to get the mid value, as Low and High are defined as a offset from mid
+            self.pwm_mid_value = int(pwm_line[1])
+
+
+    def update_display(self):
+        self.lcd_display.lcd_clear()
+        if self.index in (0,2):
+            self.lcd_display.lcd_display_string("Offset from mid", 1)
+            self.lcd_display.lcd_display_string(str(self.pwm_value), 2)
+        else:
+            self.lcd_display.lcd_display_string("Mid value", 1)
+            self.lcd_display.lcd_display_string(str(self.pwm_value), 2)
 
 class SessionRecorderNode(BasicMenuNode):
 
@@ -565,10 +632,11 @@ class MenuManager:
 
         self.root_node = BasicMenuNode("Root", 0, 1, self.lcd_display, "Root")    # Root node
 
-        self.play_tab_node = BasicMenuNode("play_tab_node", 0, 4, self.lcd_display, "Play Tab", self.root_node)
-        self.practice_node = BasicMenuNode("practice_node", 1, 4, self.lcd_display, "Practice", self.root_node)
-        self.string_routine_node = BasicMenuNode("string_test_node", 2, 4, self.lcd_display, "String Routine", self.root_node)
-        self.servo_pos_node = BasicMenuNode("motor_pos_node", 3, 4, self.lcd_display, "Servo Position", self.root_node)
+        self.play_tab_node = BasicMenuNode("play_tab_node", 0, 5, self.lcd_display, "Play Tab", self.root_node)
+        self.practice_node = BasicMenuNode("practice_node", 1, 5, self.lcd_display, "Practice", self.root_node)
+        self.string_routine_node = BasicMenuNode("string_test_node", 2, 5, self.lcd_display, "String Routine", self.root_node)
+        self.servo_pos_node = BasicMenuNode("motor_pos_node", 3, 5, self.lcd_display, "Servo Position", self.root_node)
+        self.pwm_editor_node = BasicMenuNode("pwm_editor_node", 4, 5, self.lcd_display, "Change PWM value", self.root_node)
 
 
         self.free_play_node = FreePlayNode("freeplay_node", 0, 2, self.lcd_display, "Metronome", self.metronome, self.practice_node)
@@ -587,6 +655,20 @@ class MenuManager:
         SessionRecorderNode("RS", 0, 1, self.lcd_display, "", self.metronome, self.servo_manager, self.tab_manager, self.new_tab_node, self.play_tab_node)
         self.existing_tab_node = BasicMenuNode("existing_tab_node", 1, 2, self.lcd_display, "Existing Tabs", self.record_node)
         
+        #PWM editor children
+        for i in range(0,6):
+            node = BasicMenuNode("pwm_editor_sub_node", i, 6, self.lcd_display, "String " + str(i + 1), self.pwm_editor_node)
+            for j in range(0,3):
+                if j == 0:
+                    text_to_display = "LOW"
+                elif j == 1:
+                    text_to_display = "MID"
+                elif j == 2:
+                    text_to_display = "HIGH"
+
+                sub_node = BasicMenuNode("pwm_editor_sub_node", j, 3, self.lcd_display, text_to_display, node)
+                PwmEditorNode("PWM_value_editor", j, 3, self.lcd_display, text_to_display, self.servo_manager, sub_node)
+
 
         self.update_available_tabs()
         self.current_node = self.play_tab_node
