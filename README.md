@@ -1,6 +1,6 @@
 # Aguitare Project V.1.0
 
-This project aims to 'replace' the right hand of the guitarist, to allow him to play a second instrument simultaneously.
+This project tries to 'replace' the right hand of the guitarist, to allow him to play a second instrument simultaneously.
 
 
 ## Software
@@ -26,26 +26,3 @@ pip3 install PyGuitarPro
 ### Scheme
 
 
-
-## Usage
-
-```python
-import foobar
-
-# returns 'words'
-foobar.pluralize('word')
-
-# returns 'geese'
-foobar.pluralize('goose')
-
-# returns 'phenomenon'
-foobar.singularize('phenomena')
-```
-
-## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-
-Please make sure to update tests as appropriate.
-
-## License
-[MIT](https://choosealicense.com/licenses/mit/)
