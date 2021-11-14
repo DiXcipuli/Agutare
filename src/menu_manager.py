@@ -63,6 +63,7 @@ class BasicMenuNode(NodeMixin):
 
 
     def cancel(self):
+        # is_root is defined in anytree
         if self.parent.is_root:
             return self
         else:
@@ -195,6 +196,7 @@ class StringRoutineNode(BasicMenuNode): # Will trigger back and forth the specif
             self.lcd_display.lcd_display_string("String " + str(self.index + 1) + " playing", 1)
         else:
             self.lcd_display.lcd_display_string("String " + str(self.index + 1), 1)
+            self.lcd_display.lcd_display_string(str(self.index + 1) + "/6", 2)
 
     def node_type(self):
         return "StringRoutineNode"
@@ -387,8 +389,10 @@ class PwmEditorNode(BasicMenuNode):
         lines = []
         with open(self.servo_manager.pwm_file_path) as pwm_file:
             lines = pwm_file.readlines()
-            new_line = lines[self.associated_string].split(',')
+            new_line = lines[self.associated_string + self.servo_manager.pwm_comment_lines].split(',')
             new_line[self.index] = str(self.pwm_value)
+            if '\n' not in new_line[2]:
+                new_line[2] = new_line[2] + '\n'
             new_line = ','.join(new_line)
             lines[self.associated_string] = new_line
 
@@ -407,13 +411,12 @@ class PwmEditorNode(BasicMenuNode):
         else:
             value_to_send = self.pwm_value
 
-        print("value sent is {}".format(value_to_send))
         self.servo_manager.set_servo_pwm(self.associated_string, value_to_send)
 
 
     def read_pwm_file(self):
         with open(self.servo_manager.pwm_file_path) as pwm_file:
-            pwm_line = pwm_file.readlines()[self.associated_string].split(',')
+            pwm_line = pwm_file.readlines()[self.associated_string + self.servo_manager.pwm_comment_lines].split(',')
             self.pwm_value = int(pwm_line[self.index])
             # We need to get the mid value, as Low and High are defined as a offset from mid
             self.pwm_mid_value = int(pwm_line[1])
@@ -428,52 +431,26 @@ class PwmEditorNode(BasicMenuNode):
             self.lcd_display.lcd_display_string("Mid value", 1)
             self.lcd_display.lcd_display_string(str(self.pwm_value), 2)
 
-class SessionRecorderNode(BasicMenuNode):
 
-    def __init__(self, node_name, index, size, lcd_display, text_to_display, metronome, servo_manager, tab_manager, parent, pseudo_parent, children = None):
+    def node_type(self):
+        return "PwmEditorNode"
+
+
+class RecorderNode(BasicMenuNode):
+
+    def __init__(self, node_name, index, size, lcd_display, text_to_display, metronome, servo_manager, tab_manager, parent, children = None):
         super().__init__(node_name, index, size, lcd_display, text_to_display, parent, children)
-        self.bars_to_record = 1
         self.state = SessionRecorderState.IDLE
-        self.pseudo_parent = pseudo_parent
         self.metronome = metronome
         self.servo_manager = servo_manager
         self.tab_manager = tab_manager
         
-        self.nb_of_loops = 0
-        self.start_at_loop = 0
-        self.end_after_loop = 0
 
-
-    def next(self): # Here the next button increases the number of beats to be recorded
-        if self.state in (SessionRecorderState.IDLE, SessionRecorderState.METRONOME_ON):
-            self.state = SessionRecorderState.PLAYER_IDLE
-        elif self.state == SessionRecorderState.PLAYER_IDLE:
-            self.state = SessionRecorderState.IDLE
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_START:
-            self.start_at_loop +=1
-            if self.start_at_loop > self.nb_of_loops:
-                self.start_at_loop = 1
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
-            self.end_after_loop +=1
-            if self.end_after_loop > self.nb_of_loops:
-                self.end_after_loop = self.start_at_loop
-
+    def next(self):
         return self
 
 
-    def previous(self): # Here the previous button triggers and stop the metronome
-        if self.state in (SessionRecorderState.IDLE, SessionRecorderState.METRONOME_ON):
-            self.state = SessionRecorderState.PLAYER_IDLE
-        elif self.state == SessionRecorderState.PLAYER_IDLE:
-            self.state = SessionRecorderState.IDLE
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_START:
-            self.start_at_loop -= 1
-            if self.start_at_loop < 1:
-                self.start_at_loop = self.nb_of_loops
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
-            self.end_after_loop -= 1
-            if self.end_after_loop < self.start_at_loop:
-                self.end_after_loop = self.nb_of_loops
+    def previous(self):
         return self
 
 
@@ -488,20 +465,8 @@ class SessionRecorderNode(BasicMenuNode):
             self.state = SessionRecorderState.IDLE
             self.tab_manager.clear_saved_notes()
             self.metronome.stop_metronome()
-        elif self.state == SessionRecorderState.PLAYER_IDLE:
-            self.state = SessionRecorderState.PLAYER_SELECTION_START
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_START:
-            if self.nb_of_loops != 0:
-                self.state = SessionRecorderState.PLAYER_SELECTION_END
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
-            if self.nb_of_loops != 0: 
-                self.state = SessionRecorderState.PLAYER_ON
-                self.tab_manager.play_tab(self.absolute_tab_path, True,  self.start_at_loop, self.end_after_loop)
         elif self.state == SessionRecorderState.SAVING:
-            self.tab_manager.save_loop(os.path.join(self.tab_manager.tabs_path, self.node_name))
-            self.nb_of_loops =  self.tab_manager.load_tab_info(self.absolute_tab_path)[2]
-            self. start_at_loop = self.nb_of_loops
-            self.end_after_loop = self.nb_of_loops
+            self.tab_manager.save_loop(os.path.join(self.tab_manager.tabs_path, self.parent.node_name))
             self.state = SessionRecorderState.IDLE
             self.tab_manager.clear_events()
             self.tab_manager.clear_saved_notes()
@@ -510,10 +475,7 @@ class SessionRecorderNode(BasicMenuNode):
 
     def cancel(self):
         if self.state == SessionRecorderState.IDLE:
-            return self.pseudo_parent
-        elif self.state == SessionRecorderState.PLAYER_IDLE:
-            self.state = SessionRecorderState.IDLE
-            return self
+            return self.parent
         elif self.state == SessionRecorderState.METRONOME_ON:
             self.state = SessionRecorderState.IDLE
             self.metronome.stop_metronome()
@@ -533,22 +495,7 @@ class SessionRecorderNode(BasicMenuNode):
             self.tab_manager.clear_events()
             #CLEAR EVENT LIST
             return self
-        elif self.state == SessionRecorderState.PLAYER_ON:
-            self.state = SessionRecorderState.PLAYER_IDLE
-            self.tab_manager.clear_events()
-            return self
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_START:
-            self.state = SessionRecorderState.IDLE
-            self.tab_manager.clear_events()
-            return self
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
-            self.state = SessionRecorderState.PLAYER_SELECTION_START
-            return self
-
-
-    def end_tab_callback(self):
-        self.state = SessionRecorderState.PLAYER_SELECTION_END
-        self.update_display()
+        
 
 
     def metronome_callback(self, overflow):
@@ -581,30 +528,14 @@ class SessionRecorderNode(BasicMenuNode):
             self.lcd_display.lcd_display_string("Recording " + str(self.metronome.current_beat), 1)
         elif self.state == SessionRecorderState.SAVING:
             self.lcd_display.lcd_display_string("Save Loop ?", 1)
-        elif self.state == SessionRecorderState.PLAYER_IDLE:
-            self.lcd_display.lcd_display_string("PLAYER:", 1)
-            self.lcd_display.lcd_display_string("2/2", 2)
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_START:
-            self.lcd_display.lcd_display_string("From:", 1)
-            if self.nb_of_loops == 0:
-                self.lcd_display.lcd_display_string("No loop rec. yet", 2)
-            else:
-                self.lcd_display.lcd_display_string(str(self.start_at_loop), 2)
-        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
-            self.lcd_display.lcd_display_string("From:       To:", 1)
-            self.lcd_display.lcd_display_string(str(self.start_at_loop) + "    " + str(self.end_after_loop), 2)
-        elif self.state == SessionRecorderState.PLAYER_ON:
-            self.lcd_display.lcd_display_string("PLAYING !", 1)
+        
     
 
     def on_focus(self):
-        self.tab_manager.set_callback(self.end_tab_callback)
-        self.absolute_tab_path = self.tab_manager.grab_tab_file_from_node_name(self.node_name)[0]
+        self.absolute_tab_path = self.tab_manager.grab_tab_file_from_node_name(self.parent.node_name)[0]
         tempo, beats, self.nb_of_loops = self.tab_manager.load_tab_info(self.absolute_tab_path)
         self.metronome.tempo = tempo
         self.metronome.beats_per_loop = beats
-        self.start_at_loop = self.nb_of_loops
-        self.end_after_loop = self.nb_of_loops
         self.servo_manager.set_callback_func(self.servo_callback)
 
     
@@ -617,7 +548,180 @@ class SessionRecorderNode(BasicMenuNode):
 
     def node_type(self):
         return "SessionRecorderNode"
+
+
+class LoopPlayerNode(BasicMenuNode):
+    def __init__(self, node_name, index, size, lcd_display, text_to_display, tab_manager, parent=None, children=None):
+        super().__init__(node_name, index, size, lcd_display, text_to_display, parent=parent, children=children)
         
+        self.state = SessionRecorderState.PLAYER_SELECTION_START
+        self.tab_manager = tab_manager
+
+        self.nb_of_loops = 0
+        self.start_at_loop = 0
+        self.end_after_loop = 0
+
+    
+    def next(self):
+        if self.state == SessionRecorderState.PLAYER_SELECTION_START:
+            self.start_at_loop +=1
+            if self.start_at_loop > self.nb_of_loops:
+                self.start_at_loop = 1
+        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
+            self.end_after_loop +=1
+            if self.end_after_loop > self.nb_of_loops:
+                self.end_after_loop = self.start_at_loop
+
+        return self
+
+
+    def previous(self):
+        if self.state == SessionRecorderState.PLAYER_SELECTION_START:
+            self.start_at_loop -= 1
+            if self.start_at_loop < 1:
+                self.start_at_loop = self.nb_of_loops
+        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
+            self.end_after_loop -= 1
+            if self.end_after_loop < self.start_at_loop:
+                self.end_after_loop = self.nb_of_loops
+        return self
+
+
+    def execute(self):
+        if self.state == SessionRecorderState.PLAYER_SELECTION_START:
+            if self.nb_of_loops != 0:
+                self.state = SessionRecorderState.PLAYER_SELECTION_END
+        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
+            if self.nb_of_loops != 0: 
+                self.state = SessionRecorderState.PLAYER_ON
+                self.tab_manager.play_tab(self.absolute_tab_path, True,  self.start_at_loop, self.end_after_loop)
+        return self
+
+
+    def cancel(self):
+        if self.state == SessionRecorderState.PLAYER_ON:
+            self.state = SessionRecorderState.PLAYER_SELECTION_START
+            self.tab_manager.clear_events()
+            return self
+        elif self.state == SessionRecorderState.PLAYER_SELECTION_START:
+            return self.parent
+        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
+            self.state = SessionRecorderState.PLAYER_SELECTION_START
+            return self
+
+
+    def on_focus(self):
+        self.tab_manager.set_callback(self.end_tab_callback)
+        self.absolute_tab_path = self.tab_manager.grab_tab_file_from_node_name(self.parent.node_name)[0]
+        tempo, beats, self.nb_of_loops = self.tab_manager.load_tab_info(self.absolute_tab_path)
+        self.start_at_loop = self.nb_of_loops
+        self.end_after_loop = self.nb_of_loops
+
+    def end_tab_callback(self):
+        self.state = SessionRecorderState.PLAYER_SELECTION_END
+        self.update_display()
+
+
+    def update_display(self):
+        self.lcd_display.lcd_clear()
+        if self.state == SessionRecorderState.PLAYER_SELECTION_START:
+            self.lcd_display.lcd_display_string("From:", 1)
+            if self.nb_of_loops == 0:
+                self.lcd_display.lcd_display_string("No loop rec. yet", 2)
+            else:
+                self.lcd_display.lcd_display_string(str(self.start_at_loop), 2)
+        elif self.state == SessionRecorderState.PLAYER_SELECTION_END:
+            self.lcd_display.lcd_display_string("From:       To:", 1)
+            self.lcd_display.lcd_display_string(str(self.start_at_loop) + "    " + str(self.end_after_loop), 2)
+        elif self.state == SessionRecorderState.PLAYER_ON:
+            self.lcd_display.lcd_display_string("PLAYING !", 1)
+
+
+class SessionNode(BasicMenuNode):
+    def __init__(self, node_name, index, size, lcd_display, text_to_display, metronome, servo_manager, tab_manager, parent, pseudo_parent, children=None):
+        super().__init__(node_name, index, size, lcd_display, text_to_display, parent=parent, children=children)
+
+        self.metronome = metronome
+        self.servo_manager = servo_manager
+        self.tab_manager = tab_manager
+        self.pseudo_parent = pseudo_parent
+
+        #define 3 children nodes
+        self.recorder_node = RecorderNode("recorder", 0, 3, self.lcd_display, "Recorder", self.metronome, self.servo_manager, self.tab_manager, self)
+        self.player_node = LoopPlayerNode("Player", 1, 3, self.lcd_display, "Player", self.tab_manager, self)
+        #self.options_node = TabOptionNode("Option", 2, 3, self.lcd_display, "Options", self.tab_manager, self)
+
+        self.node_list = ["Recorder", "Player", "Options"]
+        self.cursor = 0
+
+
+    def next(self):
+        self.cursor += 1
+        if self.cursor >= len(self.node_list):
+            self.cursor = 0
+        return self
+
+
+    def previous(self):
+        self.cursor -= 1
+        if self.cursor < 0:
+            self.cursor = len(self.node_list) - 1
+        return self
+
+
+    def execute(self):
+        return self.children[self.cursor]
+
+
+    def cancel(self):
+        return self.pseudo_parent
+
+
+    def update_display(self):
+        self.lcd_display.lcd_clear()
+        self.lcd_display.lcd_display_string(self.node_list[self.cursor], 1)
+        self.lcd_display.lcd_display_string(str(self.cursor + 1) +"/" + str(len(self.node_list)), 2)
+
+
+
+
+"""
+class TabOptionNode(BasicMenuNode):
+    def __init__(self, node_name, index, size, lcd_display, text_to_display, tab_manager, parent=None, children=None):
+        super().__init__(node_name, index, size, lcd_display, text_to_display, parent=parent, children=children)
+        self.tab_manager = tab_manager
+
+        self.tempo_option = TempoOption("Change Tempo")
+
+        self.cursor = 0
+
+
+    def next(self):
+        self.cursor += 1
+        if self.cursor >= len(self.node_list):
+            self.cursor = 0
+        return self
+
+
+    def previous(self):
+        self.cursor -= 1
+        if self.cursor < 0:
+            self.cursor = len(self.node_list) - 1
+        return self
+        
+
+
+    def update_display(self):
+        self.lcd_display.lcd_clear()
+        self.lcd_display.lcd_display_string()
+
+
+    class TempoOption(BasicMenuNode):
+        def __init__(self, text_to_display):
+            self.text_to_display = text_to_display
+
+"""
+
 
 class MenuManager:
 
@@ -639,8 +743,8 @@ class MenuManager:
         self.pwm_editor_node = BasicMenuNode("pwm_editor_node", 4, 5, self.lcd_display, "Change PWM value", self.root_node)
 
 
-        self.free_play_node = FreePlayNode("freeplay_node", 0, 2, self.lcd_display, "Metronome", self.metronome, self.practice_node)
-        self.record_node = BasicMenuNode("record_node", 1, 2, self.lcd_display, "Record", self.practice_node)
+        self.free_play_node = FreePlayNode("freeplay_node", 0, 2, self.lcd_display, "Free Mode", self.metronome, self.practice_node)
+        self.session_mode_node = BasicMenuNode("record_node", 1, 2, self.lcd_display, "Session Mode", self.practice_node)
         
 
         for i in range(0,6):
@@ -651,9 +755,9 @@ class MenuManager:
             ServosPositionNode("Servos to " + servo_text[i], i, 3, self.lcd_display, "Servos to " + servo_text[i], self.servo_manager, self.menu_sleeping_time, self.servo_pos_node)
 
 
-        self.new_tab_node = TabCreatorNode("new_tab_node", 0, 2, self.lcd_display, "New Tab", self.metronome, self.tab_manager, self.menu_sleeping_time, parent = self.record_node, menu_manager = self)
-        SessionRecorderNode("RS", 0, 1, self.lcd_display, "", self.metronome, self.servo_manager, self.tab_manager, self.new_tab_node, self.play_tab_node)
-        self.existing_tab_node = BasicMenuNode("existing_tab_node", 1, 2, self.lcd_display, "Existing Tabs", self.record_node)
+        self.new_tab_node = TabCreatorNode("new_tab_node", 0, 2, self.lcd_display, "New Tab", self.metronome, self.tab_manager, self.menu_sleeping_time, parent = self.session_mode_node, menu_manager = self)
+        SessionNode("RS", 0, 1, self.lcd_display, "", self.metronome, self.servo_manager, self.tab_manager, self.new_tab_node, self.new_tab_node)
+        self.existing_tab_node = BasicMenuNode("existing_tab_node", 1, 2, self.lcd_display, "Existing Tabs", self.session_mode_node)
         
         #PWM editor children
         for i in range(0,6):
@@ -673,9 +777,7 @@ class MenuManager:
         self.update_available_tabs()
         self.current_node = self.play_tab_node
         self.set_inputs()
-        self.update_display()
-        self.display_tree()
-        
+        self.update_display()        
 
 
     def set_inputs(self):
@@ -722,7 +824,7 @@ class MenuManager:
             self.existing_tab_node.children = ()
         for i, file_name in enumerate(sorted(available_tabs)):   # Populating the list with all the files in the 'custom_tab_path' folder
             new_tab = BasicMenuNode(str(file_name), i, len(available_tabs), self.lcd_display, str(file_name), self.existing_tab_node)
-            SessionRecorderNode(str(file_name), 0, 1, self.lcd_display, "", self.metronome, self.servo_manager, self.tab_manager, new_tab, self.play_tab_node)
+            SessionNode(str(file_name), 0, 1, self.lcd_display, "", self.metronome, self.servo_manager, self.tab_manager, new_tab, self.existing_tab_node)
 
 
      

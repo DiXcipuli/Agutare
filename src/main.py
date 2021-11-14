@@ -11,8 +11,8 @@ from RPi import GPIO
 
 GPIO.setmode(GPIO.BCM)
 
-tabs_path = '/home/pi/Documents/Aguitare/tabs/'
-pwm_file_path = '/home/pi/Documents/Aguitare/pwm_value.txt'
+tabs_path = '../tabs'
+pwm_file_path = '../pwm_value.txt'
 
     
 def main():
@@ -24,6 +24,7 @@ def main():
     menu_manager = mm.MenuManager(metronome, servo_manager, tab_manager)
     
     menu_manager.display_tree()     # Shows the menu tree, useful to debug
+    
     signal.pause()
     
 if __name__ == "__main__":

@@ -18,9 +18,12 @@ class ServoManager():
         self.servo_mid_position_array = [275,285,295,295,295,285]            
         self.servo_low_position_offset_array = [40, 40, 40, 40, 40, 40]
         self.servo_high_position_offset_array = [40, 40, 40, 40, 40, 40]
+        
+        # Number of comment lines in the pwm file
+        self.pwm_comment_lines = 0
 
         self.load_pwm_value_from_file()
-
+    
         btn_servo_1 = 21            #
         btn_servo_2 = 20            #
         btn_servo_3 = 16            # Buttons to trigger the servos
@@ -39,7 +42,7 @@ class ServoManager():
     def load_pwm_value_from_file(self):
         if os.path.exists(self.pwm_file_path):
             with open(self.pwm_file_path) as pwm_file:
-                lines = pwm_file.readlines()
+                lines = pwm_file.readlines()[self.pwm_comment_lines:]
 
             for i, line in enumerate(lines):
                 line = line.split(',')
