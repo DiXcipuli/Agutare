@@ -1,6 +1,8 @@
 import Adafruit_PCA9685
 from gpiozero import Button
 import os
+import threading
+import time
 
 
 class ServoManager():
@@ -15,9 +17,12 @@ class ServoManager():
         self.pwm_16_channel_module.set_pwm_freq(50)                      # Set to 50Hz
 
         # Those are some default values, but will be overwritten when loading the pwm_file
-        self.servo_mid_position_array = [275,285,295,295,295,285]            
-        self.servo_low_position_offset_array = [40, 40, 40, 40, 40, 40]
-        self.servo_high_position_offset_array = [40, 40, 40, 40, 40, 40]
+        self.servos_settings = [[-40, 255, 40],
+                                [-40, 255, 40],
+                                [-40, 255, 40],
+                                [-40, 255, 40],
+                                [-40, 255, 40],
+                                [-40, 255, 40]]
         
         # Number of comment lines in the pwm file
         self.pwm_comment_lines = 0
@@ -38,6 +43,8 @@ class ServoManager():
         Button(btn_servo_5).when_pressed = lambda x: self.trigger_servo(4, self.callback)
         Button(btn_servo_6).when_pressed = lambda x: self.trigger_servo(5, self.callback)
 
+        self.string_routine_running = False
+
 
     def load_pwm_value_from_file(self):
         if os.path.exists(self.pwm_file_path):
@@ -47,20 +54,26 @@ class ServoManager():
             for i, line in enumerate(lines):
                 line = line.split(',')
                 for j, value in enumerate(line):
-                    if j == 0:
-                        self.servo_low_position_offset_array[i] = int(value)
-                    elif j == 1:
-                        self.servo_mid_position_array[i] = int(value)
-                    elif i == 2:
-                        self.servo_high_position_offset_array[i] = int(value)
+                    self.servos_settings[i][j] = value
 
-    def update_pwm_value(self, string, mode, value):
-        if mode == 0:
-            self.servo_low_position_offset_array[string] = int(value)
-        elif mode == 1:
-            self.servo_mid_position_array[string] = int(value)
-        elif string == 2:
-            self.servo_high_position_offset_array[string] = int(value)
+
+    def update_and_write_pwm_value(self, string, mode, value):
+        #update the array
+        self.servos_settings[string][mode] = value
+        
+        #Rewrite the file
+        lines = []
+        with open(self.pwm_file_path) as pwm_file:
+            lines = pwm_file.readlines()
+            new_line = lines[string + self.pwm_comment_lines].split(',')
+            new_line[mode] = str(value)
+            if '\n' not in new_line[2]:
+                new_line[2] = new_line[2] + '\n'
+            new_line = ','.join(new_line)
+            lines[string] = new_line
+
+        with open(self.pwm_file_path, 'w') as pwm_file:
+            pwm_file.writelines(lines)
 
 
     def set_callback_func(self, func):
@@ -77,6 +90,22 @@ class ServoManager():
 
         if func != None:
             func(index)
+
+
+    def start_string_routine(self, string):
+        self.string_routine_thread = threading.Thread(target=self.string_routine, args=[string])
+        self.string_routine_thread.start()
+        self.string_routine_running = True
+
+
+    def string_routine(self, string):
+        while self.string_routine_running:
+            self.trigger_servo(string)
+            time.sleep(0.4)
+
+
+    def stop_string_routine(self):
+        self.string_routine_running = False
 
 
     def setAllServosLowPosition(self):

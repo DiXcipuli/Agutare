@@ -5,7 +5,7 @@ import threading
 import time
 import guitarpro as pygp
 from threading import Timer
-from enum_classes import TabCreatorState, SessionRecorderState
+from enum_classes import PWMEditorState, ServosPositionState, StringsRoutineState, TabCreatorState, SessionRecorderState, TabPlayerState
 from gpiozero import Button
 
 """
@@ -84,54 +84,82 @@ class BasicMenuNode(NodeMixin):
         return "BasicMenuNode"
 
 
-class TabPlayerNode(BasicMenuNode): # This class will load a tab, (either gp3, gp4, gp5 or agu format) and play it by triggering the servos
+class TabPlayerNode(BasicMenuNode): # This class will load a tab, (either gp3, gp4, gp5 or agu format) and play it, triggering the servos
     
     def __init__(self, node_name, index, size, lcd_display, text_to_display, tab_manager, parent = None, children = None):
         super().__init__(node_name, index, size, lcd_display, text_to_display, parent, children)
         self.tab_manager = tab_manager
-        self.is_tab_playing = False
+        self.state = TabPlayerState.IDLE
+
+        self.tab_index = 0
+        self.tab_list = []
 
     def next(self):
-        if not self.is_tab_playing:
+        if self.state == TabPlayerState.IDLE:
             return super().next()
-        else:
+        elif self.state == TabPlayerState.BROWSING_TAB:
+            self.tab_index += 1
+            if self.tab_index >= len(self.tab_list):
+                self.tab_index = 0
+
             return self
 
         
     def previous(self):
-        if not self.is_tab_playing:
+        if self.state == TabPlayerState.IDLE:
             return super().previous()
-        else:
+        elif self.state == TabPlayerState.BROWSING_TAB:
+            self.tab_index -= 1
+            if self.tab_index < 0:
+                self.tab_index = len(self.tab_list) - 1
+
             return self
 
 
     def execute(self):
-        if not self.is_tab_playing:
-            self.update_display()
+        if self.state == TabPlayerState.IDLE:
+            self.update_tab_list()
+            if len(self.tab_list) != 0:
+                self.state = TabPlayerState.BROWSING_TAB
+            else:
+                self.lcd_display.lcd_clear()
+                self.lcd_display.lcd_display_string("No tabs found!", 1)
+                time.sleep(0.5)
+
+        elif self.state == TabPlayerState.BROWSING_TAB:
             # Get absolute path, and get if its a gpX or .agu file
-            tab_absolute_path , is_agu_file = self.tab_manager.grab_tab_file_from_node_name(self.node_name)
-            if is_agu_file: # If it is, we need to pass some info to the tab manager before playing it
+            tab_absolute_path , is_agu_file = self.tab_manager.grab_tab_file_from_node_name(self.tab_list[self.tab_index])
+            if is_agu_file: # If it is, we need to pass some info to the tab manager before playing it (like tempo, beats ..)
                 self.tab_manager.load_tab_info(tab_absolute_path)
             self.tab_manager.play_tab(tab_absolute_path, is_agu_file)
-            self.is_tab_playing = True
+            
+            self.state = TabPlayerState.PLAYING_TAB
+        
         return self
 
 
     def cancel(self):
-        if self.is_tab_playing:
-            self.is_tab_playing = False
+        if self.state == TabPlayerState.IDLE:
+            return super().cancel()
+        elif self.state == TabPlayerState.BROWSING_TAB:
+            self.state = TabPlayerState.IDLE
+            return self
+        elif self.state == TabPlayerState.PLAYING_TAB:
+            self.state = TabPlayerState.BROWSING_TAB
             self.tab_manager.clear_events()
             return self
-        else:
-            return self.parent
         
 
     def update_display(self):
         self.lcd_display.lcd_clear()
-        if self.is_tab_playing:
-            self.lcd_display.lcd_display_string("Playing", 1)
-        else:
-            super().update_display()
+        if self.state == TabPlayerState.IDLE:
+            self.lcd_display.lcd_display_string(self.text_to_display, 1)
+            self.lcd_display.lcd_display_string(str(self.index + 1) + "/" + str(self.size), 2)
+        elif self.state == TabPlayerState.BROWSING_TAB:
+            self.lcd_display.lcd_display_string(str(self.tab_list[self.tab_index]), 1)
+            self.lcd_display.lcd_display_string(str(self.tab_index + 1) + "/" + str(len(self.tab_list)), 2)
+        elif self.state == TabPlayerState.PLAYING_TAB:
+            self.lcd_display.lcd_display_string("Playing tab!", 1)
 
 
     def end_tab_callback(self):
@@ -141,6 +169,11 @@ class TabPlayerNode(BasicMenuNode): # This class will load a tab, (either gp3, g
     
     def on_focus(self):
         self.tab_manager.set_callback(self.end_tab_callback)
+
+
+    def update_tab_list(self):
+         # Checking for all tab, either gpX or .agu
+        self.tab_list = self.tab_manager.get_available_tabs(check_mode = 1)
 
 
     def node_type(self):
@@ -155,51 +188,66 @@ class StringRoutineNode(BasicMenuNode): # Will trigger back and forth the specif
         self.is_string_test_running = False
         self.servo_routine_sleep = 0.5
 
+        self.state = StringsRoutineState.IDLE
+        self.string_index = 0
+        self.nb_of_strings = 6
+
 
     def next(self):
-        if not self.is_string_test_running:
+        if self.state == StringsRoutineState.IDLE:
             return super().next()
-        else:
+        elif self.state == StringsRoutineState.BROWSING:
+            self.string_index += 1
+            if self.string_index >= self.nb_of_strings:
+                self.string_index = 0
             return self
+
 
     def previous(self):
-        if not self.is_string_test_running:
+        if self.state == StringsRoutineState.IDLE:
             return super().previous()
-        else:
+        elif self.state == StringsRoutineState.BROWSING:
+            self.string_index -= 1
+            if self.string_index < 0:
+                self.string_index = self.nb_of_strings- 1
             return self
+
 
     def execute(self):
-        if not self.is_string_test_running:
-            self.is_string_test_running = True
-            testThread = threading.Thread(target=self.string_test_loop)
-            testThread.start()
+        if self.state == StringsRoutineState.IDLE:
+            self.state = StringsRoutineState.BROWSING
+        elif self.state == StringsRoutineState.BROWSING:
+            self.state = StringsRoutineState.ROUTINE_RUNNING
+            self.servo_manager.start_string_routine(self.string_index)
+
         return self
-
-
-    def cancel(self):
-        if self.is_string_test_running:
-            self.is_string_test_running = False
-            return self
-        else:
-            return self.parent
             
 
-    def string_test_loop(self):
-        while self.is_string_test_running:
-            self.servo_manager.trigger_servo(self.index)
-            time.sleep(self.servo_routine_sleep)
+    def cancel(self):
+        if self.state == StringsRoutineState.IDLE:
+            return super().cancel()
+        elif self.state == StringsRoutineState.BROWSING:
+            self.state = StringsRoutineState.IDLE
+        elif self.state == StringsRoutineState.ROUTINE_RUNNING:
+            self.servo_manager.stop_string_routine()
+            self.state = StringsRoutineState.BROWSING
+        
+        return self
 
 
     def update_display(self):
         self.lcd_display.lcd_clear()
-        if self.is_string_test_running:
-            self.lcd_display.lcd_display_string("String " + str(self.index + 1) + " playing", 1)
-        else:
-            self.lcd_display.lcd_display_string("String " + str(self.index + 1), 1)
-            self.lcd_display.lcd_display_string(str(self.index + 1) + "/6", 2)
+        if self.state == StringsRoutineState.IDLE:
+            super().update_display()
+        elif self.state == StringsRoutineState.BROWSING:
+            self.lcd_display.lcd_display_string("String " + str(self.string_index + 1), 1)
+            self.lcd_display.lcd_display_string(str(self.string_index + 1) + "/6", 2)
+        elif self.state == StringsRoutineState.ROUTINE_RUNNING:
+            self.lcd_display.lcd_display_string("String " + str(self.string_index + 1) + " playing", 1)
+
 
     def node_type(self):
-        return "StringRoutineNode"
+        return "StringsRoutineNode"
 
 
 class ServosPositionNode(BasicMenuNode): # Set all servos to either, Low, Mid or High (No use for it actually)
@@ -209,25 +257,76 @@ class ServosPositionNode(BasicMenuNode): # Set all servos to either, Low, Mid or
         self.servo_manager = servo_manager
         self.menu_sleeping_time = menu_sleeping_time
 
-    def execute(self):
-        if self.index == 0: # Servo to LOW position
-            self.servo_manager.setAllServosLowPosition()
-        elif self.index == 1:
-            self.servo_manager.setAllServosMidPosition()
-        elif self.index == 2:
-            self.servo_manager.setAllServosHighPosition()
+        self.state = ServosPositionState.IDLE
+        self.option_index = 0
+        self.nb_of_options = 3
+        self.options_name = ["LOW", "MID", "HIGH"]
 
-        self.lcd_display.lcd_clear()
-        self.lcd_display.lcd_display_string("Set !", 1)
-        time.sleep(self.menu_sleeping_time)
+
+    def next(self):
+        if self.state == ServosPositionState.IDLE:
+            return super().next()
+
+        elif self.state == ServosPositionState.BROWSING_OPTIONS:
+            self.option_index += 1
+            if self.option_index >= self.nb_of_options:
+                self.option_index = 0
+
+            return self
+
+
+    def previous(self):
+        if self.state == ServosPositionState.IDLE:
+            return super().previous()
+
+        elif self.state == ServosPositionState.BROWSING_OPTIONS:
+            self.option_index -= 1
+            if self.option_index < 0:
+                self.option_index = self.nb_of_options - 1
+
+            return self
+
+
+    def execute(self):
+        if self.state == ServosPositionState.IDLE:
+            self.state = ServosPositionState.BROWSING_OPTIONS
+        elif self.state == ServosPositionState.BROWSING_OPTIONS:
+            if self.option_index == 0: # Servo to LOW position
+                self.servo_manager.setAllServosLowPosition()
+            elif self.option_index == 1:
+                self.servo_manager.setAllServosMidPosition()
+            elif self.option_index == 2:
+                self.servo_manager.setAllServosHighPosition()
+
+            self.lcd_display.lcd_clear()
+            self.lcd_display.lcd_display_string("Set !", 1)
+            time.sleep(self.menu_sleeping_time)
        
         return self   
+
+
+    def cancel(self):
+        if self.state == ServosPositionState.IDLE:
+            return super().cancel()
+        elif self.state == ServosPositionState.BROWSING_OPTIONS:
+            self.state = ServosPositionState.IDLE
+            return self
+
+
+    def update_display(self):
+        self.lcd_display.lcd_clear()
+        if self.state == ServosPositionState.IDLE:
+            super().update_display()
+        elif self.state == ServosPositionState.BROWSING_OPTIONS:
+            self.lcd_display.lcd_display_string(self.options_name[self.option_index], 1)            
+            self.lcd_display.lcd_display_string(str(self.option_index + 1) + "/" + str(self.nb_of_options), 2)            
+
 
     def node_type(self):
         return "ServosPositionNode"
 
 
-class FreePlayNode(BasicMenuNode):
+class FreePlayNode(BasicMenuNode): # This node simply provides a metronome
 
     def __init__(self, node_name, index, size, lcd_display, text_to_display, metronome, parent = None, children = None):
         super().__init__(node_name, index, size, lcd_display, text_to_display, parent, children)
@@ -279,7 +378,7 @@ class FreePlayNode(BasicMenuNode):
         return "FreePlayNode"
 
 
-class TabCreatorNode(BasicMenuNode):
+class TabCreatorNode(BasicMenuNode): # This node creates a tab, asking for a tempo and a number of beats per bar.
 
     def __init__(self, node_name, index, size, lcd_display, text_to_display, metronome, tab_manager, menu_sleeping_time, menu_manager, parent = None, children = None):
         super().__init__(node_name, index, size, lcd_display, text_to_display, parent, children)
@@ -367,69 +466,103 @@ class PwmEditorNode(BasicMenuNode):
     def __init__(self, node_name, index, size, lcd_display, text_to_display, servo_manager, parent=None, children=None):
         super().__init__(node_name, index, size, lcd_display, text_to_display, parent=parent, children=children)
         self.servo_manager = servo_manager
-        self.associated_string = self.parent.parent.index
         self.increment = 10
+
+        self.state = PWMEditorState.IDLE
+        self.string_index = 0
+        self.mode_index = 0
+        self.nb_of_strings = 6
+        self.nb_of_modes = 3
+        self.modes_list = ["LOW", "MID", "HIGH"]
+
     
     def next(self):
-        self.pwm_value += self.increment
-        self.write_pwm_value()
-        self.set_pwm_value()
-        self.servo_manager.update_pwm_value(self.associated_string, self.index, self.pwm_value)
+        if self.state == PWMEditorState.IDLE:
+            return super().next()
+        elif self.state == PWMEditorState.BROWSING_STRINGS:
+            self.string_index += 1
+            if self.string_index >= self.nb_of_strings:
+                self.string_index = 0
+        elif self.state == PWMEditorState.BROWSING_MODES:
+            self.mode_index += 1
+            if self.mode_index >= self.nb_of_modes:
+                self.mode_index = 0
+        elif self.state == PWMEditorState.SETTING_VALUE:
+            self.pwm_value += self.increment
+            self.servo_manager.update_and_write_pwm_value(self.string_index, self.mode_index, self.pwm_value)
+            self.set_pwm_value()
         return self
+
 
     def previous(self):
-        self.pwm_value -= self.increment
-        self.write_pwm_value()
-        self.set_pwm_value()
-        self.servo_manager.update_pwm_value(self.associated_string, self.index, self.pwm_value)
+        if self.state == PWMEditorState.IDLE:
+            return super().previous()
+        elif self.state == PWMEditorState.BROWSING_STRINGS:
+            self.string_index -= 1
+            if self.string_index < 0:
+                self.string_index = self.nb_of_strings - 1
+        elif self.state == PWMEditorState.BROWSING_MODES:
+            self.mode_index -= 1
+            if self.mode_index < 0:
+                self.mode_index = self.nb_of_modes
+        elif self.state == PWMEditorState.SETTING_VALUE:
+            self.pwm_value -= self.increment
+            self.servo_manager.update_and_write_pwm_value(self.string_index, self.mode_index, self.pwm_value)
+            self.set_pwm_value()
         return self
 
 
-    def write_pwm_value(self):
-        lines = []
-        with open(self.servo_manager.pwm_file_path) as pwm_file:
-            lines = pwm_file.readlines()
-            new_line = lines[self.associated_string + self.servo_manager.pwm_comment_lines].split(',')
-            new_line[self.index] = str(self.pwm_value)
-            if '\n' not in new_line[2]:
-                new_line[2] = new_line[2] + '\n'
-            new_line = ','.join(new_line)
-            lines[self.associated_string] = new_line
-
-        with open(self.servo_manager.pwm_file_path, 'w') as pwm_file:
-            pwm_file.writelines(lines)
+    def execute(self):
+        if self.state == PWMEditorState.IDLE:
+            self.state = PWMEditorState.BROWSING_STRINGS
+        elif self.state == PWMEditorState.BROWSING_STRINGS:
+            self.state = PWMEditorState.BROWSING_MODES
+        elif self.state == PWMEditorState.BROWSING_MODES:
+            self.state = PWMEditorState.SETTING_VALUE
+            self.pwm_value = int(self.servo_manager.servos_settings[self.string_index][self.mode_index])
+            self.pwm_mid_value = int(self.servo_manager.servos_settings[self.string_index][1])
+            self.set_pwm_value()
+        return self
 
 
+    def cancel(self):
+        if self.state == PWMEditorState.IDLE:
+            return super().cancel()
+        elif self.state == PWMEditorState.BROWSING_STRINGS:
+            self.state = PWMEditorState.IDLE
+        elif self.state == PWMEditorState.BROWSING_MODES:
+            self.state = PWMEditorState.BROWSING_STRINGS
+        elif self.state == PWMEditorState.SETTING_VALUE:
+            self.state = PWMEditorState.BROWSING_MODES
+        return self
 
-    def on_focus(self):
-        self.read_pwm_file()
-        self.set_pwm_value()
 
     def set_pwm_value(self):
-        if self.index in (0, 2):
+        if self.mode_index in (0, 2):
             value_to_send = self.pwm_mid_value + self.pwm_value
         else:
             value_to_send = self.pwm_value
 
-        self.servo_manager.set_servo_pwm(self.associated_string, value_to_send)
-
-
-    def read_pwm_file(self):
-        with open(self.servo_manager.pwm_file_path) as pwm_file:
-            pwm_line = pwm_file.readlines()[self.associated_string + self.servo_manager.pwm_comment_lines].split(',')
-            self.pwm_value = int(pwm_line[self.index])
-            # We need to get the mid value, as Low and High are defined as a offset from mid
-            self.pwm_mid_value = int(pwm_line[1])
+        self.servo_manager.set_servo_pwm(self.string_index, value_to_send)
 
 
     def update_display(self):
         self.lcd_display.lcd_clear()
-        if self.index in (0,2):
-            self.lcd_display.lcd_display_string("Offset from mid", 1)
-            self.lcd_display.lcd_display_string(str(self.pwm_value), 2)
-        else:
-            self.lcd_display.lcd_display_string("Mid value", 1)
-            self.lcd_display.lcd_display_string(str(self.pwm_value), 2)
+        if self.state == PWMEditorState.IDLE:
+            super().update_display()
+        elif self.state == PWMEditorState.BROWSING_STRINGS:
+            self.lcd_display.lcd_display_string("String " + str(self.string_index + 1), 1)
+            self.lcd_display.lcd_display_string(str(self.string_index + 1) + "/" + str(self.nb_of_strings), 2)
+        elif self.state == PWMEditorState.BROWSING_MODES:
+            self.lcd_display.lcd_display_string(self.modes_list[self.mode_index], 1)
+            self.lcd_display.lcd_display_string(str(self.mode_index + 1) + "/" + str(self.nb_of_modes), 2)
+        elif self.state == PWMEditorState.SETTING_VALUE:
+            if self.mode_index in (0,2):
+                self.lcd_display.lcd_display_string("Offset from mid", 1)
+                self.lcd_display.lcd_display_string(str(self.pwm_value), 2)
+            else:
+                self.lcd_display.lcd_display_string("Mid value", 1)
+                self.lcd_display.lcd_display_string(str(self.pwm_value), 2)
 
 
     def node_type(self):
@@ -683,6 +816,9 @@ class SessionNode(BasicMenuNode):
         self.lcd_display.lcd_display_string(str(self.cursor + 1) +"/" + str(len(self.node_list)), 2)
 
 
+    def node_type(self):
+        return "sessionNode"
+
 
 
 """
@@ -733,45 +869,22 @@ class MenuManager:
         self.lcd_display = I2C_LCD_driver.lcd() 
         self.menu_sleeping_time = 1.2 # The time needed to display some useful information
 
-
         self.root_node = BasicMenuNode("Root", 0, 1, self.lcd_display, "Root")    # Root node
 
-        self.play_tab_node = BasicMenuNode("play_tab_node", 0, 5, self.lcd_display, "Play Tab", self.root_node)
+        self.play_tab_node = TabPlayerNode("play_tab_node", 0, 5, self.lcd_display, "Play Tab", self.tab_manager, self.root_node)
         self.practice_node = BasicMenuNode("practice_node", 1, 5, self.lcd_display, "Practice", self.root_node)
-        self.string_routine_node = BasicMenuNode("string_test_node", 2, 5, self.lcd_display, "String Routine", self.root_node)
-        self.servo_pos_node = BasicMenuNode("motor_pos_node", 3, 5, self.lcd_display, "Servo Position", self.root_node)
-        self.pwm_editor_node = BasicMenuNode("pwm_editor_node", 4, 5, self.lcd_display, "Change PWM value", self.root_node)
+        self.string_routine_node = StringRoutineNode("string_test_node", 2, 5, self.lcd_display, "String Routine", self.servo_manager, self.root_node)
+        self.servo_pos_node = ServosPositionNode("motor_pos_node", 3, 5, self.lcd_display, "Servo Position", self.servo_manager, self.menu_sleeping_time, self.root_node)
+        self.pwm_editor_node = PwmEditorNode("pwm_editor_node", 4, 5, self.lcd_display, "Change PWM value", self.servo_manager, self.root_node)
 
 
         self.free_play_node = FreePlayNode("freeplay_node", 0, 2, self.lcd_display, "Free Mode", self.metronome, self.practice_node)
         self.session_mode_node = BasicMenuNode("record_node", 1, 2, self.lcd_display, "Session Mode", self.practice_node)
         
 
-        for i in range(0,6):
-            StringRoutineNode("String " + str(i + 1), i, 6, self.lcd_display, "String " + str(i + 1), self.servo_manager, parent = self.string_routine_node)
-
-        servo_text = ["Low", "Mid", "High"]
-        for i in range(0,3):
-            ServosPositionNode("Servos to " + servo_text[i], i, 3, self.lcd_display, "Servos to " + servo_text[i], self.servo_manager, self.menu_sleeping_time, self.servo_pos_node)
-
-
         self.new_tab_node = TabCreatorNode("new_tab_node", 0, 2, self.lcd_display, "New Tab", self.metronome, self.tab_manager, self.menu_sleeping_time, parent = self.session_mode_node, menu_manager = self)
         SessionNode("RS", 0, 1, self.lcd_display, "", self.metronome, self.servo_manager, self.tab_manager, self.new_tab_node, self.new_tab_node)
         self.existing_tab_node = BasicMenuNode("existing_tab_node", 1, 2, self.lcd_display, "Existing Tabs", self.session_mode_node)
-        
-        #PWM editor children
-        for i in range(0,6):
-            node = BasicMenuNode("pwm_editor_sub_node", i, 6, self.lcd_display, "String " + str(i + 1), self.pwm_editor_node)
-            for j in range(0,3):
-                if j == 0:
-                    text_to_display = "LOW"
-                elif j == 1:
-                    text_to_display = "MID"
-                elif j == 2:
-                    text_to_display = "HIGH"
-
-                sub_node = BasicMenuNode("pwm_editor_sub_node", j, 3, self.lcd_display, text_to_display, node)
-                PwmEditorNode("PWM_value_editor", j, 3, self.lcd_display, text_to_display, self.servo_manager, sub_node)
 
 
         self.update_available_tabs()
@@ -797,22 +910,6 @@ class MenuManager:
 
 
     def update_available_tabs(self):
-
-        # 1: Checking for all tab, either gpX or .agu, to be reachable in 'Playing Mode' -------------------------------------------
-        all_available_tabs = self.tab_manager.get_available_tabs(check_mode = 1)
-
-        # Remove all nodes under 'Playing node', in order to recreate them all, with eventually new ones.
-        if len(self.play_tab_node.children) != 0:
-            for child in self.play_tab_node.children:
-                del child.children
-            del self.play_tab_node.children
-            self.play_tab_node.children = ()
-        
-
-        for index, file_name  in enumerate(sorted(all_available_tabs)): 
-           TabPlayerNode(str(file_name), index, len(all_available_tabs), self.lcd_display, str(file_name), self.tab_manager, self.play_tab_node)
-        # --------------------------------------------------------------------------------------------------------------------------
-
         # 2: Checking .agu tab, to be reachable in 'Record Mode' -------------------------------------------------------------------
         available_tabs = self.tab_manager.get_available_tabs(check_mode = 2)
 
