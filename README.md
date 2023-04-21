@@ -2,7 +2,7 @@
 
 This project tries to 'replace' the right hand of the guitarist, to allow him to play a second instrument simultaneously. The final purpose is to have a system which loads a tab, and acts as the right hand of the guitarist, triggering the servos and plucking the strings at the right time over the song.
 
-The user can navigate the menu through a LCD screen, where he can choose among the different features presented below. Here is a [Youtube link](https://www.youtube.com/watch?v=UqwoRIKUd7I) showing the final result.
+The user can navigate the menu through a LCD screen, where he can choose among the different features presented below. Here is a [Youtube link](https://www.youtube.com/watch?v=UqwoRIKUd7I) showing the result of the first version.
 
 ![presentation](/imgs/Aguitare_presentation.jpg)
 

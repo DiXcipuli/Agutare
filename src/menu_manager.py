@@ -93,6 +93,7 @@ class TabPlayerNode(BasicMenuNode): # This class will load a tab, (either gp3, g
 
         self.tab_index = 0
         self.tab_list = []
+        self.tab_manager.set_callback(self.end_tab_callback)
 
     def next(self):
         if self.state == TabPlayerState.IDLE:
@@ -147,6 +148,7 @@ class TabPlayerNode(BasicMenuNode): # This class will load a tab, (either gp3, g
         elif self.state == TabPlayerState.PLAYING_TAB:
             self.state = TabPlayerState.BROWSING_TAB
             self.tab_manager.clear_events()
+            self.tab_manager.metronome.stop_metronome()
             return self
         
 
@@ -163,7 +165,8 @@ class TabPlayerNode(BasicMenuNode): # This class will load a tab, (either gp3, g
 
 
     def end_tab_callback(self):
-        self.is_tab_playing = False
+        print("cqllbqck cqlled")
+        self.state = TabPlayerState.BROWSING_TAB
         self.update_display()
 
     
@@ -200,7 +203,7 @@ class StringRoutineNode(BasicMenuNode): # Will trigger back and forth the specif
             self.string_index += 1
             if self.string_index >= self.nb_of_strings:
                 self.string_index = 0
-            return self
+        return self
 
 
     def previous(self):
@@ -210,7 +213,8 @@ class StringRoutineNode(BasicMenuNode): # Will trigger back and forth the specif
             self.string_index -= 1
             if self.string_index < 0:
                 self.string_index = self.nb_of_strings- 1
-            return self
+        
+        return self
 
 
     def execute(self):
@@ -504,7 +508,7 @@ class PwmEditorNode(BasicMenuNode):
         elif self.state == PWMEditorState.BROWSING_MODES:
             self.mode_index -= 1
             if self.mode_index < 0:
-                self.mode_index = self.nb_of_modes
+                self.mode_index = self.nb_of_modes - 1
         elif self.state == PWMEditorState.SETTING_VALUE:
             self.pwm_value -= self.increment
             self.servo_manager.update_and_write_pwm_value(self.string_index, self.mode_index, self.pwm_value)
@@ -532,6 +536,7 @@ class PwmEditorNode(BasicMenuNode):
             self.state = PWMEditorState.IDLE
         elif self.state == PWMEditorState.BROWSING_MODES:
             self.state = PWMEditorState.BROWSING_STRINGS
+            self.mode_index = 0
         elif self.state == PWMEditorState.SETTING_VALUE:
             self.state = PWMEditorState.BROWSING_MODES
         return self

@@ -19,7 +19,7 @@ def main():
 
     metronome = metro.Metronome()
     servo_manager = sm.ServoManager(pwm_file_path)
-    tab_manager = tm.TabManager(servo_manager, tabs_path)
+    tab_manager = tm.TabManager(servo_manager, metronome, tabs_path)
 
     menu_manager = mm.MenuManager(metronome, servo_manager, tab_manager)
     

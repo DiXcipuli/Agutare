@@ -2,14 +2,14 @@ import guitarpro as pygp
 from threading import Timer
 import os
 from enum_classes import SessionRecorderState
-import time
-
+from time import sleep
 
 
 class TabManager:
 
-    def __init__(self, servo_manager, tabs_path):
+    def __init__(self, servo_manager, metronome, tabs_path):
         self.servo_manager = servo_manager
+        self.metronome = metronome
         self.tabs_path = tabs_path
 
         self.extensions_list = ("agu", "gp3", "gp4", "gp5")
@@ -35,6 +35,8 @@ class TabManager:
         self.is_tab_playing = False
         self.callback = None
         self.gp_to_agu_mapping = {6:0, 5:1, 4:2, 3:3, 2:4, 1:5}
+
+        self.play_metronome_before_song = False
 
 
     @property
@@ -121,6 +123,7 @@ class TabManager:
 
             # Set all servos to low position
             self.servo_manager.setAllServosLowPosition()
+            sleep(1)
 
             if is_agu_file:
                 with open(absolute_tab_path) as tab_file:
@@ -165,13 +168,23 @@ class TabManager:
                 if from_loop != None and to_loop != None:
                     repeat = self.repeat_loop_X_time
 
+                first_note = True
+                self.metronome.tempo = tempo
+                self.events.append(Timer(0, self.metronome.start_metronome))
+
                 for i in range (repeat):
                     for time, string in pre_event_array:
-                        self.events.append(Timer(time + i * self.beats * 60/self.current_tempo * nb_of_loops, self.servo_manager.trigger_servo, [string]))
-                
-                end_of_tab_event_timer = (self.repeat_loop_X_time - 1) * self.beats * 60/self.current_tempo * nb_of_loops + pre_event_array[-1][0]\
+                        metronome_offset =  self.beats * 60/self.current_tempo
+                        self.events.append(Timer(time + i * self.beats * 60/self.current_tempo * nb_of_loops + metronome_offset, self.servo_manager.trigger_servo, [string]))
+                        if first_note:
+                            first_note = False
+                            self.events.append(Timer(time + i * self.beats * 60/self.current_tempo * nb_of_loops + metronome_offset, self.metronome.stop_metronome))
+                        print(time + i * self.beats * 60/self.current_tempo * nb_of_loops + metronome_offset)
+                end_of_tab_event_timer = (repeat - 1) * self.beats * (60/self.current_tempo) * (nb_of_loops + 1) + pre_event_array[-1][0]\
                     + self.end_of_tab_event_offset
                 
+                print("pre-array = {}".format(pre_event_array[-1][0]))
+                print("end_of_t = {}".format(end_of_tab_event_timer))
                 # Add a timer that will trigger an end_of_tab callback
                 self.events.append(Timer(end_of_tab_event_timer, self.end_of_tab_callback))
 
@@ -179,10 +192,20 @@ class TabManager:
             else :
                 end_of_tab_event_timer = 0
                 song = pygp.parse(absolute_tab_path)
-                measure_number = 0
+
+                if self.play_metronome_before_song:
+                    measure_number = 1
+                    self.events.append(Timer(0, self.metronome.start_metronome))
+                    first_note = True
+                else:
+                    measure_number = 0
+
+                
                 beats_per_bar = song.measureHeaders[0].timeSignature.numerator
+                self.metronome.tempo = song.tempo
+                
                 for measure in song.tracks[0].measures:
-                    measure_time = measure_number * 60 * beats_per_bar / song.tempo
+                    measure_time = (measure_number) * 60 * beats_per_bar / song.tempo
                     for voice in measure.voices:
                         beat_time = 0
                         for beat in voice.beats:
@@ -193,7 +216,10 @@ class TabManager:
                                 end_of_tab_event_timer = note_time
                                 for note in beat.notes:
                                     self.events.append(Timer(note_time, self.servo_manager.trigger_servo, [self.gp_to_agu_mapping[note.string]]))
-
+                                    if self.play_metronome_before_song:
+                                        if first_note:
+                                            first_note = False
+                                            self.events.append(Timer(note_time, self.metronome.stop_metronome))
 
                     measure_number = measure_number + 1
 

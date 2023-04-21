@@ -17,6 +17,8 @@ class ServoManager():
         self.pwm_16_channel_module.set_pwm_freq(50)                      # Set to 50Hz
 
         # Those are some default values, but will be overwritten when loading the pwm_file
+	    # For the S90 ones, the min value is ~70, and the max is ~505, so a good mid value is ~290
+        # For the AZ-delivery MG995, min is 500, max is 2500
         self.servos_settings = [[-40, 255, 40],
                                 [-40, 255, 40],
                                 [-40, 255, 40],
@@ -54,7 +56,7 @@ class ServoManager():
             for i, line in enumerate(lines):
                 line = line.split(',')
                 for j, value in enumerate(line):
-                    self.servos_settings[i][j] = value
+                    self.servos_settings[i][j] = int(value)
 
 
     def update_and_write_pwm_value(self, string, mode, value):
@@ -82,10 +84,10 @@ class ServoManager():
 
     def trigger_servo(self, index, func = None):
         if self.servo_low_position[index]:
-            self.pwm_16_channel_module.set_pwm(index, 0, self.servo_mid_position_array[index] + self.servo_high_position_offset_array[index])
+            self.pwm_16_channel_module.set_pwm(index, 0, self.servos_settings[index][1] + self.servos_settings[index][2])
             self.servo_low_position[index] = False
         else:
-            self.pwm_16_channel_module.set_pwm(index, 0, self.servo_mid_position_array[index] + self.servo_low_position_offset_array[index])
+            self.pwm_16_channel_module.set_pwm(index, 0, self.servos_settings[index][1] + self.servos_settings[index][0])
             self.servo_low_position[index] = True
 
         if func != None:
@@ -94,14 +96,14 @@ class ServoManager():
 
     def start_string_routine(self, string):
         self.string_routine_thread = threading.Thread(target=self.string_routine, args=[string])
-        self.string_routine_thread.start()
         self.string_routine_running = True
+        self.string_routine_thread.start()
 
 
     def string_routine(self, string):
         while self.string_routine_running:
             self.trigger_servo(string)
-            time.sleep(0.4)
+            time.sleep(0.2)
 
 
     def stop_string_routine(self):
@@ -111,18 +113,18 @@ class ServoManager():
     def setAllServosLowPosition(self):
         for i in range (0, 6):
             self.servo_low_position[i] = True
-            self.pwm_16_channel_module.set_pwm(i, 0, self.servo_mid_position_array[i] + self.servo_low_position_offset_array[i])
+            self.pwm_16_channel_module.set_pwm(i, 0, self.servos_settings[i][1] + self.servos_settings[i][0])
 
 
     def setAllServosMidPosition(self):
         for i in range (0, 6):
-            self.pwm_16_channel_module.set_pwm(i, 0, self.servo_mid_position_array[i])
+            self.pwm_16_channel_module.set_pwm(i, 0, self.servos_settings[i][1])
 
 
     def setAllServosHighPosition(self):
         for i in range (0, 6):
             self.servo_low_position[i] = False
-            self.pwm_16_channel_module.set_pwm(i, 0, self.servo_mid_position_array[i]  + self.servo_high_position_offset_array[i])
+            self.pwm_16_channel_module.set_pwm(i, 0, self.servos_settings[i][1] + self.servos_settings[i][2])
 
 
     #string [0-5], value is between 0-4096
